@@ -1,0 +1,6 @@
+# Perfil de desenvolvimento local.
+# Ativar com: ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+logging:
+  level:
+    org.hibernate.SQL: debug
+    org.springframework.web: debug

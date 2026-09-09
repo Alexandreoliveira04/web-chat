@@ -1,10 +1,12 @@
-package com.chat.web;
+package br.edu.webchat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest
-class WebApplicationTests {
+@ActiveProfiles("test")
+class WebChatApplicationTests {
 
 	@Test
 	void contextLoads() {

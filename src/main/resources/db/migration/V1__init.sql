@@ -1,0 +1,8 @@
+-- Migration inicial.
+--
+-- Existe apenas para validar que o Flyway esta configurado e executando:
+-- ao subir a aplicacao, a tabela flyway_schema_history e criada e recebe
+-- o registro da versao 1.
+--
+-- As tabelas de dominio (users, chats, chat_participants, messages) serao
+-- criadas nas migrations das respectivas etapas do roadmap.
