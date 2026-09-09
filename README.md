@@ -6,8 +6,8 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 1 — Fundação**. Os módulos `auth`, `user` e `chat` ainda não
-> foram implementados.
+> Estado atual: **Fase 2 — USER**. Os módulos `auth` e `chat` ainda não foram
+> implementados; os endpoints de usuário ainda não exigem autenticação.
 
 ---
 
@@ -61,14 +61,25 @@ Para ativar o perfil de desenvolvimento (log de SQL e de web):
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-### Health check
+### Endpoints
+
+```http
+GET  /api/v1/health
+
+POST /api/v1/users
+GET  /api/v1/users
+GET  /api/v1/users/{id}
+PUT  /api/v1/users/{id}
+```
+
+Detalhes em [docs/user.md](docs/user.md). Exemplo rápido:
 
 ```bash
 curl http://localhost:8080/api/v1/health
-```
 
-```json
-{ "status": "UP" }
+curl -X POST http://localhost:8080/api/v1/users   -H "Content-Type: application/json"   -d '{"name":"Alexandre Oliveira","email":"alexandre@email.com","password":"123456"}'
+
+curl http://localhost:8080/api/v1/users/1
 ```
 
 ---
@@ -117,10 +128,10 @@ Os testes usam um banco H2 em memória (perfil `test`), portanto não exigem Doc
 br.edu.webchat
 ├── WebChatApplication.java
 ├── auth/     (Fase 3)
-├── user/     (Fase 2)
+├── user/     controller, dto, entity, repository, service
 ├── chat/     (Fases 4-6)
 └── shared/
-    ├── config/
-    ├── controller/   health check
-    └── exception/    tratamento global de erros
+    ├── config/        PasswordEncoder (BCrypt)
+    ├── controller/    health check
+    └── exception/     tratamento global de erros
 ```

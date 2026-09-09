@@ -11,7 +11,7 @@ implementação; em caso de divergência, a spec prevalece.
 | Módulo | Responsabilidade | Fase | Situação |
 | ------ | ---------------- | ---- | -------- |
 | [shared](shared.md) | Configuração, tratamento de erros, health check | 1 | Implementado |
-| [user](user.md) | Colaboradores: cadastro, consulta, perfil, status | 2 | Não iniciado |
+| [user](user.md) | Colaboradores: cadastro, consulta, perfil, status | 2 | Implementado |
 | [auth](auth.md) | Registro, login, JWT, Spring Security | 3 | Não iniciado |
 | [chat](chat.md) | Conversas, mensagens, histórico, WebSocket | 4–6 | Não iniciado |
 
@@ -39,7 +39,7 @@ Controller -> Service -> Repository -> Database
 - Prefixo: `/api/v1`
 - Recursos no plural: `/users`, `/chats`, `/messages`
 - JSON em `camelCase`
-- IDs em UUID
+- IDs numéricos: `Long` no Java, `BIGINT` no PostgreSQL, gerados pelo banco
 - Datas em `Instant` / `OffsetDateTime` (ISO-8601, UTC), nunca `java.util.Date`
 
 ### Validação

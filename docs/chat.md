@@ -33,7 +33,7 @@ arquivos, edição e exclusão de mensagens, respostas e reações estão fora d
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
-| `id` | UUID | PK |
+| `id` | BIGINT | PK, identity |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
@@ -41,8 +41,8 @@ arquivos, edição e exclusão de mensagens, respostas e reações estão fora d
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
-| `chat_id` | UUID | FK → `chats.id` |
-| `user_id` | UUID | FK → `users.id` |
+| `chat_id` | BIGINT | FK → `chats.id` |
+| `user_id` | BIGINT | FK → `users.id` |
 
 Restrições:
 
@@ -54,15 +54,15 @@ Restrições:
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
-| `id` | UUID | PK |
-| `chat_id` | UUID | FK → `chats.id` |
-| `sender_id` | UUID | FK → `users.id` |
+| `id` | BIGINT | PK, identity |
+| `chat_id` | BIGINT | FK → `chats.id` |
+| `sender_id` | BIGINT | FK → `users.id` |
 | `content` | texto | não pode ser vazio |
 | `created_at` | timestamptz | preenchido automaticamente |
 | `read_at` | timestamptz | nulo enquanto não lida |
 
 Migrations: `V3__create_chats.sql`, `V4__create_chat_participants.sql`,
-`V5__create_messages.sql` (numeração a confirmar conforme as migrations já aplicadas).
+`V5__create_messages.sql` (a última migration aplicada é a `V2__create_users.sql`).
 
 ## Relacionamentos
 
