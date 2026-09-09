@@ -45,6 +45,12 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
+	public UserResponse findByEmail(String email) {
+		return UserResponse.from(userRepository.findByEmail(normalizeEmail(email))
+				.orElseThrow(() -> new NotFoundException("Usuario nao encontrado: " + email)));
+	}
+
+	@Transactional(readOnly = true)
 	public UserResponse findById(Long id) {
 		return UserResponse.from(findEntityById(id));
 	}

@@ -16,19 +16,12 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Tratamento global de excecoes. Toda resposta de erro da API usa {@link ApiError}.
- *
- * <p>Estende {@code ResponseEntityExceptionHandler} para que as excecoes proprias do
- * Spring MVC (rota inexistente, metodo nao suportado, corpo malformado, ...) mantenham
- * o status HTTP correto em vez de cairem no tratamento generico de erro 500.
- */
+
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
 	private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-	/** Erros de validacao de entrada (Bean Validation) -> 400 com o detalhe por campo. */
 	@Override
 	protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException ex,
 			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
@@ -44,7 +37,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 				fields));
 	}
 
-	/** Converte as demais excecoes padrao do Spring MVC para o formato {@link ApiError}. */
 	@Override
 	protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body,
 			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
@@ -64,6 +56,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 				pathOf(request)));
 	}
 
+	@ExceptionHandler(UnauthorizedException.class)
+	public ResponseEntity<ApiError> handleUnauthorized(UnauthorizedException ex, WebRequest request) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiError.of(
+				HttpStatus.UNAUTHORIZED.value(),
+				HttpStatus.UNAUTHORIZED.getReasonPhrase(),
+				ex.getMessage(),
+				pathOf(request)));
+	}
+
 	@ExceptionHandler(ConflictException.class)
 	public ResponseEntity<ApiError> handleConflict(ConflictException ex, WebRequest request) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(
@@ -73,7 +74,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 				pathOf(request)));
 	}
 
-	/** Rede de seguranca: nada alem daqui deve vazar detalhe interno para o cliente. */
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiError> handleUnexpected(Exception ex, WebRequest request) {
 		log.error("Erro inesperado em {}", pathOf(request), ex);

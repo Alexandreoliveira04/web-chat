@@ -2,81 +2,164 @@
 
 **Pacote:** `br.edu.webchat.auth`
 **Fase:** 3
-**Situação:** não iniciado — o pacote existe, sem classes
+**Situação:** implementado
 
-Responsável pela autenticação: registro, login, emissão e validação de JWT, e
-integração com o Spring Security.
+Responsável pela autenticação: login, emissão e validação de JWT, e a configuração do
+Spring Security que protege o restante da API.
 
-> Este documento descreve o contrato planejado a partir da
-> [WEB-CHAT-SPEC.md](../WEB-CHAT-SPEC.md) e deve ser atualizado junto com o código
-> na fase 3.
+O AUTH **autentica**; quem responde pelos dados do colaborador continua sendo o
+módulo [user](user.md).
 
-## Estrutura prevista
+## Estrutura
 
 ```text
 auth/
+├── config/       SecurityConfig, SecurityErrorHandler
 ├── controller/   AuthController
-├── dto/          RegisterRequest, LoginRequest, LoginResponse
-├── security/     filtro JWT, serviço de token, SecurityConfig
-└── service/      AuthService
+├── dto/          LoginRequest, LoginResponse
+├── filter/       JwtAuthenticationFilter
+├── jwt/          JwtService
+└── service/      AuthService, CustomUserDetailsService
 ```
 
-O módulo não tem `entity/` nem `repository/` próprios: as credenciais ficam na
-tabela `users`, acessada pelo repositório do módulo [user](user.md).
+Não há `entity/` nem `repository/`: as credenciais ficam na tabela `users` e são
+lidas pelo `UserRepository` do módulo USER. O AUTH **não** alterou o schema — nenhuma
+migration foi criada nesta etapa, e o JWT não é persistido.
 
-## Dependências ainda não adicionadas
-
-O `pom.xml` atual **não** inclui Spring Security nem biblioteca de JWT — elas entram
-nesta fase. A escolha da biblioteca de JWT ainda não foi feita.
-
-## API
-
-| Método | Rota | Descrição | Autenticação |
-| ------ | ---- | --------- | ------------ |
-| `POST` | `/api/v1/auth/register` | Cadastra um colaborador | Não |
-| `POST` | `/api/v1/auth/login` | Autentica e devolve o JWT | Não |
-
-Estes são os únicos endpoints públicos. Todo o restante da API exige autenticação.
-
-### Fluxo
-
-```text
-Cliente --POST /auth/login--> AuthService --valida credenciais--> JWT --> Cliente
-```
-
-Nas requisições protegidas:
+## Login
 
 ```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{ "email": "alexandre@email.com", "password": "123456" }
+```
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600
+}
+```
+
+Fluxo:
+
+```text
+LoginRequest
+   ↓ normaliza o e-mail (trim + minúsculas)
+UserRepository.findByEmail
+   ↓ PasswordEncoder.matches (BCrypt)
+JwtService.generateToken
+   ↓
+LoginResponse
+```
+
+E-mail inexistente e senha incorreta produzem **exatamente a mesma resposta 401**,
+com a mensagem `E-mail ou senha invalidos`. Distinguir os dois casos revelaria quais
+e-mails estão cadastrados.
+
+O login **não** altera o `status` do usuário: ele permanece `OFFLINE`. A presença
+real será controlada pelo WebSocket (fase 6).
+
+## Requisições autenticadas
+
+```http
+GET /api/v1/users/me
 Authorization: Bearer <token>
 ```
 
-## Regras de negócio
+O `JwtAuthenticationFilter` lê o cabeçalho, valida o token e popula o
+`SecurityContext`. Token ausente, malformado, adulterado ou expirado **não** gera
+erro no filtro: a requisição segue sem autenticação e o Spring Security responde 401
+se o endpoint for protegido.
 
-- a senha é armazenada **somente** com hash BCrypt, nunca em texto puro;
-- e-mail já cadastrado resulta em `ConflictException` (409);
-- credenciais inválidas resultam em **401**, com mensagem genérica — a resposta não
-  deve revelar se o e-mail existe;
-- requisição sem token ou com token inválido/expirado em endpoint protegido: **401**;
-- usuário autenticado sem permissão sobre o recurso: **403**.
+O filtro não é um bean. Ele é construído pelo `SecurityConfig` — registrado como
+bean, o Spring Boot também o adicionaria à cadeia de filtros do servlet, executando-o
+duas vezes por requisição.
 
-## Validações
+## Endpoints
 
-- `name` obrigatório no registro;
-- `email` obrigatório e em formato válido;
-- `password` com tamanho mínimo.
+| Rota | Acesso |
+| ---- | ------ |
+| `GET /api/v1/health` | público |
+| `POST /api/v1/auth/login` | público |
+| `POST /api/v1/users` | público (cadastro inicial) |
+| `GET /api/v1/users` | autenticado |
+| `GET /api/v1/users/{id}` | autenticado |
+| `GET /api/v1/users/me` | autenticado |
+| `PUT /api/v1/users/{id}` | autenticado |
+| `/api/v1/chats/**`, `/api/v1/messages/**` | autenticado (módulos ainda não implementados) |
+| qualquer outra | autenticado |
+
+Como a regra final é `anyRequest().authenticated()`, uma rota inexistente sob
+`/api/v1` passa a responder **401** em vez de 404 quando não há token — o Spring
+Security decide antes de o roteamento acontecer. É o comportamento desejado: não
+revela quais rotas existem.
+
+## JWT
+
+| Item | Valor |
+| ---- | ----- |
+| Algoritmo | HS256 (HMAC-SHA256) |
+| Biblioteca | JJWT 0.12.6 |
+| Claims | `sub` (e-mail), `iat`, `exp` — nada além disso |
+| Validade | `jwt.expiration`, padrão 3600 s |
+| Armazenamento | nenhum: o token é stateless e não vai ao banco |
+
+`JwtService.extractEmail` devolve `Optional.empty()` para token inválido, adulterado
+ou expirado, em vez de lançar exceção — é o filtro que chama, e ele apenas segue sem
+autenticar. O token nunca é registrado em log; apenas o tipo da exceção, em `debug`.
+
+O construtor recusa segredo com menos de 32 bytes, o mínimo exigido pelo HS256.
 
 ## Configuração
 
-`JWT_SECRET` será lida de variável de ambiente, **sem valor padrão** — a aplicação
-não deve subir com um secret embutido no código. O tempo de expiração do token
-também será configurável.
+```yaml
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: ${JWT_EXPIRATION:3600}
+```
 
-## Pontos em aberto
+`JWT_SECRET` **não tem valor padrão**: sem a variável, a aplicação não sobe. Isso é
+proposital — um segredo embutido no código acabaria em produção.
 
-- Biblioteca de JWT a utilizar;
-- tempo de expiração do token;
-- se haverá refresh token (fora do escopo do MVP até que se mostre necessário);
-- como o handler global de erros passará a cobrir 401 e 403: as exceções do Spring
-  Security são lançadas em filtros, antes do `@RestControllerAdvice`, e exigem
-  `AuthenticationEntryPoint` e `AccessDeniedHandler` próprios para manter o formato
-  `ApiError` — ver [shared](shared.md#formato-de-erro).
+Para desenvolvimento local, o perfil `dev` define um valor claramente identificado
+como descartável (`application-dev.yml`). Ele não é um segredo de produção.
+
+## Erros
+
+As falhas de segurança acontecem na cadeia de filtros, **antes** do
+`DispatcherServlet`, então o `@RestControllerAdvice` não as alcança. O
+`SecurityErrorHandler` implementa `AuthenticationEntryPoint` e `AccessDeniedHandler`
+e escreve o mesmo [`ApiError`](shared.md#formato-de-erro) usado no resto da API.
+
+| Situação | Status | Origem |
+| -------- | ------ | ------ |
+| Credenciais inválidas no login | 401 | `UnauthorizedException` → `GlobalExceptionHandler` |
+| Token ausente, inválido ou expirado | 401 | `SecurityErrorHandler.commence` |
+| Autenticado sem permissão | 403 | `SecurityErrorHandler.handle` |
+| Entrada inválida | 400 | `GlobalExceptionHandler` |
+
+## Testes
+
+| Classe | Cobre |
+| ------ | ----- |
+| `JwtServiceTest` | geração, expiração, assinatura de outro segredo, payload adulterado, segredo curto |
+| `AuthServiceTest` | login válido, e-mail inexistente, senha incorreta, mensagem idêntica nos dois casos |
+| `SecurityIntegrationTest` | cadeia real: público × protegido, `/users/me`, token expirado/inválido, usuário removido |
+
+Os testes de controller com `@WebMvcTest` usam `@AutoConfigureMockMvc(addFilters =
+false)`: eles verificam o comportamento do controller, e a segurança é coberta pelo
+`SecurityIntegrationTest` com a cadeia completa.
+
+## Pendências
+
+- **Sem refresh token.** Expirado o JWT, é preciso novo login.
+- **Sem roles/RBAC.** A lista de authorities é vazia; o 403 está configurado, mas
+  nenhuma regra o dispara hoje.
+- **Nenhum estado de usuário bloqueia o login.** `UserStatus` só tem `ONLINE` e
+  `OFFLINE`, e todo usuário nasce `OFFLINE` — bloquear esse valor impediria qualquer
+  login. Um estado do tipo "inativo" exigiria um novo valor no enum, fora do escopo
+  desta etapa.
+- **CORS não configurado.** Será necessário quando o frontend Next.js existir.

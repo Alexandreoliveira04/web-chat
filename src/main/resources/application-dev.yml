@@ -4,3 +4,6 @@ logging:
   level:
     org.hibernate.SQL: debug
     org.springframework.web: debug
+
+jwt:
+  secret: ${JWT_SECRET:dev-only-secret-nao-use-em-producao-0123456789}

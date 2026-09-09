@@ -15,3 +15,8 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+
+# Segredo fixo dos testes (>= 32 bytes para HS256). Sem valor em producao.
+jwt:
+  secret: segredo-de-teste-com-tamanho-suficiente-para-hs256
+  expiration: 3600

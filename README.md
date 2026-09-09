@@ -6,8 +6,7 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 2 — USER**. Os módulos `auth` e `chat` ainda não foram
-> implementados; os endpoints de usuário ainda não exigem autenticação.
+> Estado atual: **Fase 3 — AUTH**. O módulo `chat` ainda não foi implementado.
 
 ---
 
@@ -63,23 +62,60 @@ Para ativar o perfil de desenvolvimento (log de SQL e de web):
 
 ### Endpoints
 
+Públicos:
+
 ```http
 GET  /api/v1/health
-
+POST /api/v1/auth/login
 POST /api/v1/users
+```
+
+Exigem `Authorization: Bearer <token>`:
+
+```http
 GET  /api/v1/users
+GET  /api/v1/users/me
 GET  /api/v1/users/{id}
 PUT  /api/v1/users/{id}
 ```
 
-Detalhes em [docs/user.md](docs/user.md). Exemplo rápido:
+Detalhes em [docs/user.md](docs/user.md) e [docs/auth.md](docs/auth.md).
+
+### Login
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{ "email": "alexandre@email.com", "password": "123456" }
+```
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600
+}
+```
+
+O `expiresIn` está em segundos.
+
+### Exemplo completo
 
 ```bash
-curl http://localhost:8080/api/v1/health
+# 1. cadastrar (público)
+curl -X POST http://localhost:8080/api/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alexandre Oliveira","email":"alexandre@email.com","password":"123456"}'
 
-curl -X POST http://localhost:8080/api/v1/users   -H "Content-Type: application/json"   -d '{"name":"Alexandre Oliveira","email":"alexandre@email.com","password":"123456"}'
+# 2. autenticar
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"alexandre@email.com","password":"123456"}'
 
-curl http://localhost:8080/api/v1/users/1
+# 3. usar o token
+curl http://localhost:8080/api/v1/users/me \
+  -H "Authorization: Bearer <token>"
 ```
 
 ---
@@ -97,6 +133,26 @@ aos do `compose.yaml` para facilitar o desenvolvimento local:
 | `DB_USER`     | `webchat`   |
 | `DB_PASSWORD` | `webchat`   |
 | `SERVER_PORT` | `8080`      |
+| `JWT_EXPIRATION` | `3600` (segundos) |
+| `JWT_SECRET` | **sem padrão** — obrigatória |
+
+`JWT_SECRET` não tem valor padrão de propósito: sem ela a aplicação não inicia, para
+que nenhum segredo fique embutido no código. Precisa de no mínimo 32 bytes (HS256).
+
+```powershell
+# PowerShell
+$env:JWT_SECRET = "troque-por-um-valor-longo-e-aleatorio-de-32-bytes"
+.\mvnw.cmd spring-boot:run
+```
+
+```bash
+# bash
+JWT_SECRET="troque-por-um-valor-longo-e-aleatorio-de-32-bytes" ./mvnw spring-boot:run
+```
+
+Alternativa para desenvolvimento: o perfil `dev` já traz um valor descartável, então
+`.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"` funciona sem a
+variável. Esse valor não serve para nenhum outro ambiente.
 
 Esses padrões valem apenas para desenvolvimento local. Em qualquer outro ambiente
 as variáveis devem ser fornecidas externamente — nenhuma credencial real deve ser
@@ -127,7 +183,7 @@ Os testes usam um banco H2 em memória (perfil `test`), portanto não exigem Doc
 ```text
 br.edu.webchat
 ├── WebChatApplication.java
-├── auth/     (Fase 3)
+├── auth/     config, controller, dto, filter, jwt, service
 ├── user/     controller, dto, entity, repository, service
 ├── chat/     (Fases 4-6)
 └── shared/

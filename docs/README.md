@@ -12,7 +12,7 @@ implementação; em caso de divergência, a spec prevalece.
 | ------ | ---------------- | ---- | -------- |
 | [shared](shared.md) | Configuração, tratamento de erros, health check | 1 | Implementado |
 | [user](user.md) | Colaboradores: cadastro, consulta, perfil, status | 2 | Implementado |
-| [auth](auth.md) | Registro, login, JWT, Spring Security | 3 | Não iniciado |
+| [auth](auth.md) | Login, JWT, Spring Security | 3 | Implementado |
 | [chat](chat.md) | Conversas, mensagens, histórico, WebSocket | 4–6 | Não iniciado |
 
 ## Convenções comuns
@@ -52,6 +52,11 @@ tratamento global — ver [shared](shared.md#erros-de-validação).
 
 Todas as respostas de erro usam o formato único `ApiError`, descrito em
 [shared](shared.md#formato-de-erro).
+
+### Autenticação
+
+Salvo o que estiver listado como público em [auth](auth.md#endpoints), todo endpoint
+exige `Authorization: Bearer <token>`.
 
 ### Banco
 
