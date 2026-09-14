@@ -40,6 +40,7 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll()
+						.requestMatchers("/", "/*.html", "/css/**", "/js/**", "/img/**").permitAll()
 						.requestMatchers("/api/v1/users/**").authenticated()
 						.requestMatchers("/api/v1/chats/**", "/api/v1/messages/**").authenticated()
 						.anyRequest().authenticated())
