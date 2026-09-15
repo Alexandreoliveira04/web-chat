@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Chat</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- FontAwesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Barra Superior -->
+        <header class="top-bar">
+            <div class="top-bar-left">
+                <button class="btn-secondary"><i class="fa-solid fa-users"></i> Novo Grupo</button>
+            </div>
+            <div class="logo">
+                <i class="fa-brands fa-whatsapp"></i> Web_Chat
+            </div>
+            <div class="top-bar-right">
+                <span id="current-user-name">Carregando...</span>
+                <img src="https://ui-avatars.com/api/?name=User&background=random" id="current-user-avatar" class="avatar" style="width: 36px; height: 36px; margin: 0; margin-right: 5px;">
+                <button class="btn-secondary" onclick="logout()">Sair <i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Barra lateral de Contatos/Conversas -->
+            <aside class="sidebar">
+                <div class="sidebar-search">
+                    <input type="text" placeholder="Buscar conversas..." id="search-input">
+                </div>
+                <div class="chat-list" id="chat-list">
+                    <!-- Os usuários reais serão carregados aqui via JavaScript -->
+                </div>
+                <div class="sidebar-footer">
+                    <button class="btn-secondary" id="btn-add-friend" style="border: 1px solid var(--text-muted);"><i class="fa-solid fa-user-plus"></i> Adicionar Amigos</button>
+                </div>
+            </aside>
+
+            <!-- Área Principal do Chat -->
+            <section class="chat-area">
+                <!-- Cabeçalho do Chat Ativo -->
+                <header class="chat-header" id="chat-header" style="display: none;">
+                    <div class="chat-header-info">
+                        <img src="https://ui-avatars.com/api/?name=Fulano&background=25D366&color=fff" class="avatar" id="active-chat-avatar">
+                        <span class="chat-header-name" id="active-chat-name">Fulano</span>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="btn-secondary" style="border: none; padding-right: 0;">Fotos, Vídeos, links ... <i class="fa-solid fa-ellipsis-vertical" style="margin-left: 10px;"></i></button>
+                    </div>
+                </header>
+
+                <!-- Mensagens -->
+                <div class="chat-messages" id="chat-messages">
+                    <div style="text-align: center; color: var(--text-muted); margin-top: 50px;">
+                        Selecione um contato na barra lateral para começar a conversar.
+                    </div>
+                </div>
+
+                <div id="emoji-picker-container" style="display: none; position: absolute; bottom: 80px; left: 20px; z-index: 100; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-radius: 8px;">
+                    <emoji-picker class="dark"></emoji-picker>
+                </div>
+
+                <!-- Input de Mensagem -->
+                <footer class="chat-input-area" id="chat-input-area" style="display: none;">
+                    <form class="chat-input-wrapper" id="message-form">
+                        <button type="button" class="icon-btn" title="Emoji" style="color: #F7B125;"><i class="fa-regular fa-face-smile"></i></button>
+                        <input type="text" id="message-input" placeholder="Mensagem" autocomplete="off">
+                        <button type="submit" class="icon-btn" title="Enviar" style="color: var(--text-main);"><i class="fa-solid fa-chevron-right" style="border: 1px solid var(--text-main); border-radius: 50%; padding: 4px 6px; font-size: 14px;"></i></button>
+                    </form>
+                </footer>
+            </section>
+        </main>
+    </div>
+
+    <!-- Componente de Emoji (Leve e rápido) -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/chat.js"></script>
+</body>
+</html>

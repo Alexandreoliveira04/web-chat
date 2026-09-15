@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Chat - Entrar</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="auth-container">
+        <!-- Login Form -->
+        <div class="auth-box" id="login-box">
+            <h2>Bem-vindo de volta!</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="email">E-mail</label>
+                    <input type="email" id="email" required autocomplete="email" placeholder="admin@admin.com">
+                </div>
+                <div class="form-group">
+                    <label for="password">Senha</label>
+                    <input type="password" id="password" required autocomplete="current-password" placeholder="admin">
+                    <div id="login-error" class="error-msg">Credenciais inválidas.</div>
+                </div>
+                <button type="submit" class="btn-primary auth-btn">Entrar</button>
+            </form>
+            <div class="auth-switch">
+                Ainda não tem conta? <a onclick="toggleAuth()">Cadastre-se</a>
+            </div>
+        </div>
+
+        <!-- Register Form -->
+        <div class="auth-box" id="register-box" style="display: none;">
+            <h2>Criar Conta</h2>
+            <form id="register-form">
+                <div class="form-group">
+                    <label for="reg-name">Nome Completo</label>
+                    <input type="text" id="reg-name" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="reg-email">E-mail</label>
+                    <input type="email" id="reg-email" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">Senha</label>
+                    <input type="password" id="reg-password" required autocomplete="new-password">
+                    <div id="register-error" class="error-msg">Erro ao criar conta.</div>
+                </div>
+                <button type="submit" class="btn-primary auth-btn" style="background-color: var(--brand-green); color: #111;">Cadastrar</button>
+            </form>
+            <div class="auth-switch">
+                Já possui conta? <a onclick="toggleAuth()">Fazer Login</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+</body>
+</html>
