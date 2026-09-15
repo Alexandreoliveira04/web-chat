@@ -219,6 +219,20 @@ body {
   font-size: 16px;
 }
 
+.chat-header-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-header-status {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chat-item.online .avatar {
+  box-shadow: 0 0 0 2px var(--bg-sidebar), 0 0 0 4px var(--brand-green);
+}
+
 .chat-messages {
   flex: 1;
   padding: 20px;

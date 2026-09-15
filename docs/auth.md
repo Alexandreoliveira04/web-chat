@@ -112,7 +112,8 @@ duas vezes por requisição.
 | `PUT /api/v1/users/me` | autenticado |
 | `PUT /api/v1/users/{id}` | **ADMIN** |
 | `PATCH /api/v1/users/{id}/role` | **ADMIN** |
-| `/api/v1/chats/**`, `/api/v1/messages/**` | autenticado (módulos ainda não implementados) |
+| `/api/v1/chats/**` | autenticado (e participante da conversa, checado no service) |
+| `/ws` (handshake WebSocket) | público no HTTP; autenticação no frame STOMP `CONNECT` (ver abaixo) |
 | qualquer outra | autenticado |
 
 **A ordem das regras importa.** O Spring Security usa a primeira regra que casar, e o
@@ -123,6 +124,35 @@ Como a regra final é `anyRequest().authenticated()`, uma rota inexistente sob
 `/api/v1` passa a responder **401** em vez de 404 quando não há token — o Spring
 Security decide antes de o roteamento acontecer. É o comportamento desejado: não
 revela quais rotas existem.
+
+## WebSocket
+
+O handshake `GET /ws` é liberado no `SecurityConfig` porque a API de WebSocket dos
+navegadores não permite enviar o header `Authorization` no upgrade. O JWT vai no frame STOMP
+`CONNECT`:
+
+```text
+CONNECT
+Authorization:Bearer <token>
+```
+
+O `StompAuthInterceptor` (módulo chat) reaproveita o `JwtService` e o `UserDetailsService`
+deste módulo: token ausente, inválido, expirado ou de usuário removido gera frame `ERROR`
+(`Autenticacao necessaria`) e a conexão é encerrada. Com o token válido, o usuário vira o
+`Principal` da sessão STOMP, usado em todos os frames seguintes — o remetente de uma mensagem
+nunca vem do payload.
+
+Proteções adicionais:
+
+- **origem do handshake** restrita a `WS_ALLOWED_ORIGINS` (padrão
+  `http://localhost:*,http://127.0.0.1:*`); outra origem recebe HTTP 403;
+- `SUBSCRIBE` e `SEND` são recusados antes do `CONNECT` autenticado e fora dos destinos
+  permitidos.
+
+Como o token não vai em cookie, a conexão não carrega credenciais "automáticas" do navegador;
+por isso não se usa o CSRF do `spring-security-messaging`.
+
+Detalhes do protocolo em [chat](chat.md#websocket).
 
 ## Autorização por papéis
 
@@ -233,6 +263,8 @@ false)`: eles verificam o comportamento do controller, e a segurança é coberta
 ## Pendências
 
 - **Sem refresh token.** Expirado o JWT, é preciso novo login.
+- **WebSocket valida o token só no `CONNECT`.** Uma conexão aberta continua ativa depois que
+  o token expira; a próxima reconexão é recusada e o front volta ao login.
 - **Um papel por usuário.** Não há permissões granulares nem múltiplos papéis; basta
   para o MVP. Se necessário, `role` pode virar uma tabela `user_roles`.
 - **Nenhum estado de usuário bloqueia o login.** `UserStatus` só tem `ONLINE` e

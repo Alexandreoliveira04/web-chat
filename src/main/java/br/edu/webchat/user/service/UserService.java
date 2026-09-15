@@ -8,6 +8,7 @@ import br.edu.webchat.user.dto.UpdateUserRequest;
 import br.edu.webchat.user.dto.UserResponse;
 import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.entity.User;
+import br.edu.webchat.user.entity.UserStatus;
 import br.edu.webchat.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -97,6 +98,18 @@ public class UserService {
 				});
 
 		return UserResponse.from(userRepository.saveAndFlush(admin));
+	}
+
+	@Transactional
+	public Long changeStatus(String email, UserStatus status) {
+		User user = findEntityByEmail(email);
+		userRepository.updateStatus(user.getId(), status);
+		return user.getId();
+	}
+
+	@Transactional
+	public int markAllOffline() {
+		return userRepository.updateAllStatuses(UserStatus.OFFLINE);
 	}
 
 	private UserResponse rename(User user, UpdateUserRequest request) {

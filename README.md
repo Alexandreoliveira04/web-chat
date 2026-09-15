@@ -6,8 +6,8 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 5 — mensagens via REST** concluída. O tempo real (WebSocket, fase 6)
-> ainda não foi implementado.
+> Estado atual: **Fase 6 — tempo real via WebSocket** concluída; os critérios do MVP estão
+> atendidos. Falta o Módulo 4 (Dockerfile e fechamento).
 
 ---
 
@@ -175,9 +175,29 @@ curl -X PATCH http://localhost:8080/api/v1/chats/1/messages/read \
   -H "Authorization: Bearer <token>"
 ```
 
-A interface web em `http://localhost:8080` já usa esses endpoints: abrir um contato inicia
-ou reaproveita a conversa, carrega o histórico e marca as mensagens como lidas. Mensagens
-recebidas ainda só aparecem ao reabrir a conversa — o tempo real chega na fase 6.
+### Tempo real (WebSocket)
+
+STOMP sobre WebSocket em `ws://localhost:8080/ws`, autenticado com o JWT no frame `CONNECT`:
+
+| Frame | Destino | Conteúdo |
+| ----- | ------- | -------- |
+| `SEND` | `/app/chats/{chatId}/messages` | `{ "content": "..." }` |
+| `SUBSCRIBE` | `/user/queue/messages` | mensagens novas das suas conversas |
+| `SUBSCRIBE` | `/user/queue/read` | avisos de leitura (✓✓) |
+| `SUBSCRIBE` | `/user/queue/errors` | erros do seu último envio |
+| `SUBSCRIBE` | `/topic/presence` | quem ficou online/offline |
+
+Mensagens enviadas pelo `POST` REST também são entregues em tempo real. Protocolo completo
+em [docs/chat.md](docs/chat.md#websocket).
+
+### Interface web
+
+`http://localhost:8080` usa a API e o WebSocket: abrir um contato inicia ou reaproveita a
+conversa e carrega o histórico; mensagens chegam na hora, as não lidas aparecem na barra
+lateral, os ✓✓ atualizam quando o outro lê e o anel verde no avatar indica quem está online.
+
+Para testar a conversa, abra duas janelas (uma delas anônima, já que o token fica no
+`localStorage`) e entre com usuários diferentes.
 
 ---
 
@@ -199,6 +219,7 @@ aos do `compose.yaml` para facilitar o desenvolvimento local:
 | `ADMIN_EMAIL` | vazio — nenhum administrador inicial |
 | `ADMIN_PASSWORD` | vazio — obrigatória se o admin ainda não existir |
 | `ADMIN_NAME` | `Administrador` |
+| `WS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas no WebSocket |
 
 `JWT_SECRET` não tem valor padrão de propósito: sem ela a aplicação não inicia, para
 que nenhum segredo fique embutido no código. Precisa de no mínimo 32 bytes (HS256).
@@ -250,7 +271,7 @@ br.edu.webchat
 ├── WebChatApplication.java
 ├── auth/     config, controller, dto, filter, jwt, service
 ├── user/     config, controller, dto, entity, repository, service
-├── chat/     controller, dto, entity, repository, service  (conversas e mensagens; WebSocket na fase 6)
+├── chat/     controller, dto, entity, repository, service, websocket
 └── shared/
     ├── config/        PasswordEncoder (BCrypt)
     ├── controller/    health check

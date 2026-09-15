@@ -311,7 +311,7 @@ chat/
 ├── entity/       Chat, Message
 ├── repository/   ChatRepository, MessageRepository
 ├── service/      ChatService, MessageService
-└── websocket/    (fase 6)
+└── websocket/    WebSocketConfig, StompAuthInterceptor, ChatWebSocketController, ChatEventBroadcaster, PresenceService
 ```
 
 Responsabilidades:
@@ -559,7 +559,31 @@ WebSocket será utilizado para:
 
 A implementação deverá utilizar uma abordagem compatível com o ecossistema Spring, preferencialmente STOMP sobre WebSocket.
 
-O protocolo e os destinos exatos deverão ser documentados durante a implementação.
+### 13.1 Protocolo (Fase 6)
+
+Implementado com **STOMP sobre WebSocket nativo** e o broker simples em memória do Spring.
+Referência completa em [docs/chat.md](docs/chat.md#websocket).
+
+| Item | Valor |
+| ---- | ----- |
+| Endpoint | `/ws` (handshake HTTP público; origens restritas por `WS_ALLOWED_ORIGINS`) |
+| Autenticação | `Authorization: Bearer <jwt>` no frame `CONNECT`; token inválido → frame `ERROR` e conexão encerrada |
+| Envio | `SEND /app/chats/{chatId}/messages` com `{ "content": "..." }` |
+| Mensagens recebidas | `/user/queue/messages` — `MessageResponse`, para os dois participantes |
+| Leitura | `/user/queue/read` — `{ chatId, readerId, markedAsRead, readAt }`, para os dois participantes |
+| Erros do envio | `/user/queue/errors` — `ApiError`, só para quem enviou |
+| Presença | `/topic/presence` — `{ userId, status }`, para todos os conectados |
+
+Regras:
+
+- envio por WebSocket e por `POST /chats/{chatId}/messages` passam pelo mesmo service, com as
+  mesmas validações; os dois caminhos notificam em tempo real;
+- as notificações são enviadas somente **após o commit** da transação;
+- destinos por usuário (`/user/queue/...`) em vez de um tópico por conversa: uma assinatura
+  recebe todas as conversas do usuário e o Spring entrega apenas às sessões dele;
+- o cliente só pode assinar os quatro destinos acima e só pode enviar para `/app/...`;
+- `users.status` é `ONLINE` enquanto o usuário tiver ao menos uma conexão aberta e volta a
+  `OFFLINE` quando a última fecha; na inicialização todos são marcados `OFFLINE`.
 
 ---
 
@@ -670,6 +694,7 @@ JWT_SECRET
 ADMIN_NAME
 ADMIN_EMAIL
 ADMIN_PASSWORD
+WS_ALLOWED_ORIGINS
 ```
 
 O arquivo `application.yml` deverá utilizar variáveis de ambiente quando apropriado.
@@ -784,6 +809,12 @@ Requisitos:
 - nenhuma credencial armazenada no código.
 
 O serviço exato da Google Cloud será definido posteriormente.
+
+**Restrição conhecida (Fase 6):** o broker STOMP simples e o controle de presença ficam em
+memória, então o tempo real funciona corretamente com **uma única instância** da aplicação.
+Escalar para várias instâncias exigirá um broker externo (ex.: RabbitMQ via
+`enableStompBrokerRelay`) e presença compartilhada — tecnologias hoje fora do escopo (§4). O
+REST continua stateless.
 
 ---
 
@@ -939,13 +970,14 @@ Exemplo:
 
 ### Fase 6 — WEBSOCKET
 
-- [ ] configuração;
-- [ ] conexão;
-- [ ] autenticação;
-- [ ] envio;
-- [ ] recebimento;
-- [ ] eventos;
-- [ ] testes.
+- [x] configuração;
+- [x] conexão;
+- [x] autenticação;
+- [x] envio;
+- [x] recebimento;
+- [x] eventos (leitura e presença online/offline);
+- [x] integração das páginas estáticas;
+- [x] testes.
 
 ### Fase 7 — FRONTEND
 
@@ -978,10 +1010,10 @@ O MVP será considerado concluído quando:
 - [x] dois usuários puderem iniciar uma conversa;
 - [x] mensagens forem persistidas no PostgreSQL;
 - [x] o histórico puder ser consultado;
-- [ ] mensagens puderem ser recebidas em tempo real;
+- [x] mensagens puderem ser recebidas em tempo real;
 - [x] o backend puder ser executado localmente;
 - [x] o PostgreSQL puder ser iniciado via Docker Compose;
-- [ ] testes básicos estiverem funcionando.
+- [x] testes básicos estiverem funcionando.
 
 ---
 
@@ -1002,8 +1034,10 @@ O MVP será considerado concluído quando:
 
 ## 28. Estado atual
 
-Fases 1, 2, 3 (incluindo autorização por papéis, Fase 3.1 / Módulo 0) e 4 (conversas,
-Módulo 1) e 5 (mensagens via REST, Módulo 2) concluídas. Próxima etapa: Fase 6 — WEBSOCKET.
+Fases 1 a 6 concluídas: fundação, USER, AUTH com papéis (Módulo 0), conversas (Módulo 1),
+mensagens via REST (Módulo 2) e tempo real via WebSocket (Módulo 3). Todos os critérios de
+conclusão do MVP (§26) estão atendidos. Próxima etapa: Módulo 4 — Dockerfile, testes do fluxo
+completo e fechamento da documentação.
 
 O frontend atual é um conjunto de páginas estáticas (HTML/CSS/JS) servidas pelo próprio
 Spring Boot em `src/main/resources/static`, usado para demonstrar a API. O frontend

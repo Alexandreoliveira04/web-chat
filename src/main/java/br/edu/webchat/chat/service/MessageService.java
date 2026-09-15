@@ -3,11 +3,13 @@ package br.edu.webchat.chat.service;
 import br.edu.webchat.chat.dto.MarkAsReadResponse;
 import br.edu.webchat.chat.dto.MessageHistoryResponse;
 import br.edu.webchat.chat.dto.MessageResponse;
+import br.edu.webchat.chat.dto.ReadReceiptResponse;
 import br.edu.webchat.chat.dto.SendMessageRequest;
 import br.edu.webchat.chat.entity.Chat;
 import br.edu.webchat.chat.entity.Message;
 import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.user.entity.User;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -23,10 +25,13 @@ public class MessageService {
 
 	private final ChatService chatService;
 	private final MessageRepository messageRepository;
+	private final ApplicationEventPublisher events;
 
-	public MessageService(ChatService chatService, MessageRepository messageRepository) {
+	public MessageService(ChatService chatService, MessageRepository messageRepository,
+			ApplicationEventPublisher events) {
 		this.chatService = chatService;
 		this.messageRepository = messageRepository;
+		this.events = events;
 	}
 
 	@Transactional
@@ -37,7 +42,9 @@ public class MessageService {
 		Message message = messageRepository.save(new Message(chat, me, request.content().strip()));
 		chat.registerActivity();
 
-		return MessageResponse.from(message);
+		MessageResponse response = MessageResponse.from(message);
+		events.publishEvent(new MessageSentEvent(response, participantEmails(chat)));
+		return response;
 	}
 
 	@Transactional(readOnly = true)
@@ -65,9 +72,21 @@ public class MessageService {
 	@Transactional
 	public MarkAsReadResponse markAsRead(Long chatId, String authenticatedEmail) {
 		User me = chatService.findAuthenticatedUser(authenticatedEmail);
-		chatService.findParticipantChat(chatId, me);
+		Chat chat = chatService.findParticipantChat(chatId, me);
 
-		return new MarkAsReadResponse(messageRepository.markAsRead(chatId, me.getId(), Instant.now()));
+		Instant readAt = Instant.now();
+		int marked = messageRepository.markAsRead(chatId, me.getId(), readAt);
+
+		if (marked > 0) {
+			ReadReceiptResponse receipt = new ReadReceiptResponse(chatId, me.getId(), marked, readAt);
+			events.publishEvent(new MessagesReadEvent(receipt, participantEmails(chat)));
+		}
+
+		return new MarkAsReadResponse(marked);
+	}
+
+	private static List<String> participantEmails(Chat chat) {
+		return chat.getParticipants().stream().map(User::getEmail).sorted().toList();
 	}
 
 }

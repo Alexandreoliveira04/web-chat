@@ -144,6 +144,11 @@ Erros são traduzidos pelo tratamento global — ver
   `uk_users_email` no banco como garantia final.
 - **Usuário inexistente**: `NotFoundException` → `404`.
 - **Status inicial**: todo usuário nasce `OFFLINE`. Não há como defini-lo pela API.
+- **Status real (presença)**: o `status` é controlado pelas conexões WebSocket — `ONLINE`
+  enquanto o usuário tiver ao menos uma sessão aberta, `OFFLINE` quando a última fecha, e
+  todos voltam a `OFFLINE` quando a aplicação inicia. Quem chama é o `PresenceService` do
+  módulo chat, via `UserService.changeStatus` e `UserService.markAllOffline`. Detalhes em
+  [chat](chat.md#presença-online--offline).
 - **Papel inicial**: todo cadastro nasce `USER`. Só um ADMIN altera papéis, e nunca o
   próprio.
 - **Administrador inicial**: `UserService.ensureAdmin` cria ou promove o e-mail de
@@ -169,6 +174,11 @@ vez de ser corrigido. É o comportamento pretendido: o `trim` do service existe 
 manter a regra coerente para qualquer chamador, não para tolerar entrada malformada
 pela API.
 
+**Status gravado com `update` direto.** `UserRepository.updateStatus` e
+`updateAllStatuses` são `@Modifying` em JPQL, sem carregar e salvar a entidade: assim o
+`@PreUpdate` não roda e conectar/desconectar não altera o `updatedAt`, que continua
+significando "perfil alterado".
+
 **Sem paginação.** `GET /users` retorna a lista completa. Adequado ao número de
 colaboradores esperado; se a listagem crescer, `Pageable` é acréscimo direto.
 
@@ -183,6 +193,4 @@ colaboradores esperado; se a listagem crescer, `Pageable` é acréscimo direto.
 
 ## Pendências
 
-- O `status` nunca muda de `OFFLINE`: a presença real será controlada pelos eventos
-  de conexão do WebSocket (fase 6).
 - Não há remoção de usuário — não está no escopo do MVP.

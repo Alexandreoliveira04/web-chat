@@ -2,13 +2,10 @@
 
 **Pacote:** `br.edu.webchat.chat`
 **Fases:** 4 (conversas), 5 (mensagens), 6 (WebSocket)
-**Situação:** Fases 4 e 5 implementadas (REST); WebSocket pendente
+**Situação:** implementado (conversas, mensagens via REST e tempo real via WebSocket)
 
 Responsável pelas conversas, participantes, mensagens, histórico e comunicação em
 tempo real.
-
-> A seção de WebSocket descreve o contrato **planejado** a partir da
-> [WEB-CHAT-SPEC.md](../WEB-CHAT-SPEC.md) e deve ser atualizada junto com o código.
 
 ## Estrutura
 
@@ -16,13 +13,14 @@ tempo real.
 chat/
 ├── controller/   ChatController, MessageController
 ├── dto/          CreateChatRequest, CreateChatResult, ChatResponse, ParticipantResponse,
-│                 SendMessageRequest, MessageResponse, MessageHistoryResponse, MarkAsReadResponse
+│                 SendMessageRequest, MessageResponse, MessageHistoryResponse, MarkAsReadResponse,
+│                 ReadReceiptResponse, PresenceResponse
 ├── entity/       Chat, Message
 ├── repository/   ChatRepository, MessageRepository
-└── service/      ChatService, MessageService
+├── service/      ChatService, MessageService, MessageSentEvent, MessagesReadEvent
+└── websocket/    WebSocketConfig, StompAuthInterceptor, ChatWebSocketController,
+                  ChatEventBroadcaster, PresenceService
 ```
-
-Previsto para a fase 6: `websocket/`.
 
 ## Escopo
 
@@ -351,29 +349,51 @@ são buscados em lote para a lista inteira, e não conversa a conversa.
 - clicar em um contato chama `POST /chats` (cria ou reaproveita), carrega o histórico e, se
   houver não lidas, chama `PATCH .../read`;
 - "Carregar mensagens anteriores" usa `nextBefore`, mantendo a posição da rolagem;
-- mensagens enviadas mostram ✓ (enviada) ou ✓✓ (lida, conforme `readAt` no momento em que o
-  histórico foi carregado).
+- mensagens enviadas mostram ✓ (enviada) ou ✓✓ (lida).
+
+Tempo real (`realtime.js`, cliente [STOMP.js](https://stomp-js.github.io/) 7 carregado por CDN):
+
+- ao abrir a página, conecta em `ws://<host>/ws` com o JWT e assina os quatro destinos
+  descritos em [WebSocket](#websocket);
+- **mensagem recebida** na conversa aberta aparece na hora e é marcada como lida (se a aba
+  estiver visível; senão, ao voltar para a aba); em outra conversa, incrementa o contador de
+  não lidas e atualiza a prévia; de uma conversa ainda desconhecida, recarrega a barra lateral;
+- **envio**: com o WebSocket conectado, publica em `/app/chats/{id}/messages` e a mensagem só é
+  desenhada quando o servidor a devolve em `/user/queue/messages` — um único caminho de
+  renderização, igual para quem envia e para as outras abas. Sem conexão, usa o `POST` REST.
+  Mensagens repetidas são ignoradas pelo `data-message-id`;
+- **recibo de leitura** troca ✓ por ✓✓ nas mensagens enviadas da conversa aberta; se quem leu
+  foi o próprio usuário (outra aba), zera o contador;
+- **presença** atualiza o anel verde no avatar da barra lateral e o "online/offline" no
+  cabeçalho da conversa;
+- **erros** do envio por WebSocket (`/user/queue/errors`) são exibidos em um alerta;
+- ao **reconectar** (tentativa a cada 5 s), recarrega a barra lateral e a conversa aberta, para
+  recuperar o que chegou enquanto a conexão estava fora; se o servidor recusar a autenticação
+  (token expirado), encerra a sessão e volta ao login.
 
 **Segurança:** todo conteúdo vindo da API (mensagens, nomes) é inserido com `textContent`,
-nunca `innerHTML`. A versão anterior montava a lista de contatos e as mensagens com
-`innerHTML`, o que permitiria XSS armazenado a partir de um nome ou mensagem com HTML.
-Quebras de linha são exibidas via `white-space: pre-wrap` no CSS.
-
-**Sem tempo real ainda:** mensagens recebidas só aparecem ao reabrir a conversa ou recarregar
-a página. A atualização automática entra na fase 6 (WebSocket).
+nunca `innerHTML`, inclusive o que chega pelo WebSocket. Quebras de linha são exibidas via
+`white-space: pre-wrap` no CSS. O campo de mensagem tem `maxlength="2000"`, o mesmo limite do
+backend, para que um envio por WebSocket não perca o texto por erro de validação.
 
 ## Testes
 
 | Classe | Tipo | Cobre |
 | ------ | ---- | ----- |
 | `ChatServiceTest` | unitário (Mockito) | criar, reaproveitar, chave em qualquer ordem, corrida, consigo mesmo (400), participante inexistente (404), listar com `lastMessage`/`unreadCount` em lote, lista vazia não consulta mensagens, consultar, não participante (403) |
-| `MessageServiceTest` | unitário (Mockito) | remetente = autenticado, `strip` do conteúdo, envio atualiza a conversa, 403/404, histórico em ordem cronológica, busca de `size + 1`, `hasMore`/`nextBefore`, marcar como lida |
+| `MessageServiceTest` | unitário (Mockito) | remetente = autenticado, `strip` do conteúdo, envio atualiza a conversa, 403/404, histórico em ordem cronológica, busca de `size + 1`, `hasMore`/`nextBefore`, marcar como lida, eventos publicados para os dois participantes, nenhum evento em envio recusado ou leitura sem pendências |
+| `StompAuthInterceptorTest` | unitário | `CONNECT` com token válido autentica; sem token, token inválido, sem `Bearer` ou usuário removido é recusado; `SUBSCRIBE` e `SEND` só nos destinos permitidos e com sessão autenticada |
+| `PresenceServiceTest` | unitário (Mockito) | primeira sessão → `ONLINE`; segunda aba não repete; fechar uma aba não deixa `OFFLINE`; desconexão repetida/desconhecida ignorada; reset na inicialização |
 | `ChatControllerTest` | `@WebMvcTest` | 201 + `Location` × 200, validação, 400/403/404, formato com `lastMessage` e `unreadCount` |
 | `MessageControllerTest` | `@WebMvcTest` | 201, conteúdo em branco/longo (400), 403, `size` padrão 50, `size`/`before` inválidos (400 com `fields`), `PATCH read` |
 | `ChatRepositoryTest` | `@DataJpaTest` (H2) | persistência e `direct_key`, busca por chave, `UNIQUE`, listagem e ordenação |
 | `MessageRepositoryTest` | `@DataJpaTest` (H2) | persistência, histórico por cursor, última mensagem por conversa, não lidas só do outro participante, `markAsRead` idempotente |
 | `ChatIntegrationTest` | `@SpringBootTest` | cadeia real das conversas: 401, criar → reaproveitar → listar, 403, 404, 400 |
 | `MessageIntegrationTest` | `@SpringBootTest` | cadeia real: 401, fluxo envio → listagem com não lidas → histórico → leitura → `readAt`, cursor sem repetição com mensagem nova no meio, conversa sobe na lista, 403 nos 3 endpoints, 400/404 |
+| `RealtimeIntegrationTest` | `@SpringBootTest(RANDOM_PORT)` + cliente STOMP real | conexão sem token/inválida recusada; `POST` REST entrega aos dois participantes e não a terceiros; envio por STOMP persiste e entrega; erro 403/400 só para quem enviou e nada é gravado; recibo de leitura; presença `ONLINE`/`OFFLINE` e status no banco |
+
+`RealtimeIntegrationTest` espera cada assinatura aparecer no `SimpUserRegistry` antes de
+disparar eventos — assinar é assíncrono, e sem essa espera o teste seria intermitente.
 
 As classes de integração limpam `messages` → `chats` → `users` também no `@AfterEach`: os
 testes compartilham o mesmo H2 em memória, e registros esquecidos fariam as FKs quebrarem a
@@ -392,24 +412,136 @@ partir das entidades); foi verificado manualmente com um `INSERT` direto no banc
 
 A persistência é sempre responsabilidade do service — tanto o caminho REST quanto o
 WebSocket passam pelo `MessageService`, para que não existam dois caminhos de escrita
-divergentes.
+divergentes. Enviar por `POST` também notifica em tempo real.
 
-## WebSocket (fase 6, planejado)
+## WebSocket
 
-Abordagem prevista: **STOMP sobre WebSocket**, por ser a opção integrada ao
-ecossistema Spring.
+**STOMP sobre WebSocket** nativo (sem SockJS), com o broker simples em memória do Spring.
 
-Pontos a definir e documentar durante a fase 6:
+### Conexão
 
-- endpoint de conexão;
-- destinos (`/topic`, `/queue`, prefixos de aplicação);
-- formato das mensagens trafegadas (a base natural é `MessageResponse`);
-- como o JWT autentica o handshake — ver [auth](auth.md);
-- eventos de leitura (atualizar ✓✓ em tempo real) e de presença (`ONLINE`/`OFFLINE`).
+| Item | Valor |
+| ---- | ----- |
+| Endpoint | `ws://<host>:<porta>/ws` |
+| Origens aceitas no handshake | `app.websocket.allowed-origins` / `WS_ALLOWED_ORIGINS` (padrão `http://localhost:*,http://127.0.0.1:*`); outra origem → HTTP 403 |
+| Autenticação | header `Authorization: Bearer <jwt>` no frame **`CONNECT`** |
+| Prefixo de aplicação (envio) | `/app` |
+| Prefixo de destinos do usuário | `/user` |
+| Broker | simples, em memória: `/topic`, `/queue` |
+
+```text
+CONNECT
+Authorization:Bearer eyJhbGciOiJIUzI1NiJ9...
+accept-version:1.2
+
+^@
+```
+
+O handshake HTTP (`GET /ws`) é público no `SecurityConfig`: navegadores não permitem enviar
+`Authorization` no upgrade de WebSocket. A autenticação acontece no frame `CONNECT`, no
+`StompAuthInterceptor` (canal de entrada), com o mesmo `JwtService` e `UserDetailsService`
+do REST. Token ausente, inválido, expirado ou de usuário removido → frame `ERROR` com
+`message: Autenticacao necessaria` e a conexão é encerrada.
+
+O interceptor também restringe os frames seguintes:
+
+- `SUBSCRIBE` só nos quatro destinos da tabela abaixo; qualquer outro → `ERROR`
+  (impede, por exemplo, assinar diretamente a fila interna de outra sessão);
+- `SEND` só para destinos `/app/...`.
+
+### Destinos
+
+| Frame | Destino | Payload | Quem recebe |
+| ----- | ------- | ------- | ----------- |
+| `SEND` | `/app/chats/{chatId}/messages` | `{ "content": "..." }` (`SendMessageRequest`) | — |
+| `SUBSCRIBE` | `/user/queue/messages` | `MessageResponse` | os dois participantes, a cada mensagem enviada (por STOMP **ou** REST) |
+| `SUBSCRIBE` | `/user/queue/read` | `ReadReceiptResponse` | os dois participantes, quando alguém marca mensagens como lidas |
+| `SUBSCRIBE` | `/user/queue/errors` | `ApiError` | só a sessão que fez o `SEND` que falhou |
+| `SUBSCRIBE` | `/topic/presence` | `PresenceResponse` | todos os conectados |
+
+```json
+// /user/queue/messages
+{ "id": 42, "chatId": 1, "senderId": 3, "content": "oi", "createdAt": "2026-09-15T02:04:17.1Z", "readAt": null }
+
+// /user/queue/read
+{ "chatId": 1, "readerId": 4, "markedAsRead": 3, "readAt": "2026-09-15T02:04:17.909643Z" }
+
+// /user/queue/errors
+{ "timestamp": "...", "status": 403, "error": "Forbidden",
+  "message": "Voce nao participa desta conversa", "path": "/app/chats/1/messages" }
+
+// /topic/presence
+{ "userId": 4, "status": "OFFLINE" }
+```
+
+> **Decisão: destinos do usuário em vez de um tópico por conversa.** Com
+> `/user/queue/messages`, uma única assinatura recebe as mensagens de **todas** as conversas do
+> usuário — é o que permite atualizar o contador de não lidas da barra lateral. E como o Spring
+> entrega em `/user/...` apenas às sessões daquele usuário, não é preciso autorizar assinatura
+> conversa a conversa. Um `/topic/chats/{id}` exigiria checar participante em cada `SUBSCRIBE`
+> e várias assinaturas por cliente.
+
+### Envio por STOMP
+
+`ChatWebSocketController` (`@MessageMapping("/chats/{chatId}/messages")`) valida o payload
+com `@Valid` e chama `MessageService.send` com o usuário da sessão — as mesmas regras do
+`POST` REST (participante, conteúdo, `strip`, atualização da conversa). O controller não
+responde diretamente: a mensagem chega a quem enviou pelo mesmo `/user/queue/messages` dos
+demais.
+
+Falhas viram `ApiError` em `/user/queue/errors` (`@SendToUser(broadcast = false)`, só a sessão
+que enviou):
+
+| Exceção | `status` |
+| ------- | -------- |
+| validação do payload | 400, com `fields` |
+| `BadRequestException` | 400 |
+| `ForbiddenException` | 403 |
+| `NotFoundException` | 404 |
+| qualquer outra | 500, mensagem genérica, stack trace no log |
+
+### Notificação após o commit
+
+`MessageService` não conhece WebSocket: ele publica `MessageSentEvent` e `MessagesReadEvent`
+(eventos de aplicação do Spring) com o payload e os e-mails dos participantes. O
+`ChatEventBroadcaster` os recebe com `@TransactionalEventListener` — que por padrão só executa
+**depois do commit** — e envia com `SimpMessagingTemplate.convertAndSendToUser`.
+
+Assim, uma mensagem cujo `INSERT` sofra rollback nunca é anunciada, e o módulo de serviço
+continua testável sem broker. `MessagesReadEvent` só é publicado quando `markedAsRead > 0`.
+
+### Presença (`ONLINE` / `OFFLINE`)
+
+`PresenceService` escuta `SessionConnectedEvent` e `SessionDisconnectEvent` e mantém, em
+memória, as sessões abertas de cada usuário:
+
+- primeira sessão do usuário → `users.status = ONLINE` + evento em `/topic/presence`;
+- sessões adicionais (outra aba, outro dispositivo) não geram evento;
+- `OFFLINE` só quando a **última** sessão fecha;
+- desconexões repetidas ou de sessão desconhecida são ignoradas;
+- na inicialização (`ApplicationReadyEvent`), todos os usuários são marcados `OFFLINE`: se a
+  aplicação caiu com gente conectada, ninguém fica "online" para sempre.
+
+O status é gravado com `update` direto (`UserRepository.updateStatus`), sem passar pelo
+`@PreUpdate` da entidade — conectar e desconectar não altera o `updatedAt` do perfil. Os
+métodos de conexão e desconexão são `synchronized`, para que eventos simultâneos do mesmo
+usuário não gravem os status fora de ordem.
+
+Verificado com o cliente STOMP.js real (o mesmo do front) contra o PostgreSQL: conexão sem
+token recusada, mensagem por STOMP e por REST entregue aos dois participantes e não a
+terceiros, 403 em `/user/queue/errors` para não participante, recibo de leitura, status
+`ONLINE` → `OFFLINE` no banco ao desconectar; e handshake com `Origin` externa → HTTP 403.
 
 ## Pendências
 
-- **Sem tempo real** até a fase 6 (ver [front](#front-páginas-estáticas)).
+- **Uma única instância.** O broker simples e o mapa de sessões do `PresenceService` vivem na
+  memória do processo. Com duas instâncias da aplicação (ex.: escalando na Google Cloud), um
+  usuário conectado na instância A não receberia eventos gerados na B, e a presença ficaria
+  inconsistente. A solução seria um broker externo (RabbitMQ/ActiveMQ via
+  `enableStompBrokerRelay`) e presença compartilhada — tecnologias fora do escopo do MVP.
+- **Token não é revalidado durante a conexão.** O JWT é checado só no `CONNECT`; uma conexão
+  aberta continua ativa depois que o token expira, até ser encerrada. Na próxima reconexão o
+  token expirado é recusado.
 - **Sem paginação** em `GET /chats`, como em `GET /users`.
 - **`readAt` é por conversa, não por mensagem**: `PATCH .../read` marca todas as recebidas de
   uma vez. Suficiente para conversas 1:1; não há "marcar só até a mensagem X".

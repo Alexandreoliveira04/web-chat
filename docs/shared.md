@@ -158,6 +158,7 @@ desenvolvimento local:
 | `ADMIN_EMAIL` | vazio — nenhum admin inicial |
 | `ADMIN_PASSWORD` | vazio |
 | `ADMIN_NAME` | `Administrador` |
+| `WS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas no handshake WebSocket |
 
 ### Perfis
 

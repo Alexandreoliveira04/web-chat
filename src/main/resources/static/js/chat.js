@@ -4,6 +4,7 @@ let chatsByContactId = new Map();
 let activeContact = null;
 let activeChat = null;
 let nextBefore = null;
+let realtimeConnectedBefore = false;
 
 const chatList = document.getElementById('chat-list');
 const messagesContainer = document.getElementById('chat-messages');
@@ -23,6 +24,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('current-user-avatar').src = avatarUrl(currentUser.name);
 
         await refreshSidebar();
+
+        Realtime.connect({
+            onConnect: handleRealtimeConnected,
+            onMessage: handleIncomingMessage,
+            onRead: handleReadReceipt,
+            onPresence: handlePresence,
+            onError: handleRealtimeError
+        });
     } catch (error) {
         console.error('Falha ao inicializar o chat', error);
     }
@@ -30,13 +39,117 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 searchInput?.addEventListener('input', renderSidebar);
 
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && activeChat?.unreadCount > 0) {
+        markActiveChatAsRead();
+    }
+});
+
 async function refreshSidebar() {
     const [users, chats] = await Promise.all([UserService.listUsers(), ChatService.listChats()]);
 
     contacts = users.filter(user => user.id !== currentUser.id);
     chatsByContactId = new Map(chats.map(chat => [otherParticipant(chat).id, chat]));
 
+    if (activeChat) {
+        activeChat = findChatById(activeChat.id) ?? activeChat;
+    }
+
     renderSidebar();
+}
+
+// --- Tempo real ---
+async function handleRealtimeConnected() {
+    // Na reconexão, recarrega o que pode ter chegado enquanto a conexão estava fora.
+    if (realtimeConnectedBefore) {
+        await refreshSidebar();
+        if (activeContact) openConversation(activeContact);
+    }
+    realtimeConnectedBefore = true;
+}
+
+async function handleIncomingMessage(message) {
+    const fromMe = message.senderId === currentUser.id;
+    const chat = findChatById(message.chatId);
+
+    if (!chat) {
+        // Conversa nova iniciada por outra pessoa: a listagem já traz a mensagem e as não lidas.
+        await refreshSidebar();
+        return;
+    }
+
+    chat.lastMessage = message;
+    chat.updatedAt = message.createdAt;
+
+    if (activeChat?.id === message.chatId) {
+        appendMessage(message);
+        if (!fromMe) {
+            chat.unreadCount += 1;
+            if (!document.hidden) markActiveChatAsRead();
+        }
+    } else if (!fromMe) {
+        chat.unreadCount += 1;
+    }
+
+    renderSidebar();
+}
+
+function handleReadReceipt(receipt) {
+    const chat = findChatById(receipt.chatId);
+
+    if (receipt.readerId === currentUser.id) {
+        // Lidas em outra aba ou dispositivo do próprio usuário.
+        if (chat) chat.unreadCount = 0;
+        renderSidebar();
+        return;
+    }
+
+    if (chat?.lastMessage?.senderId === currentUser.id) {
+        chat.lastMessage.readAt = receipt.readAt;
+    }
+
+    if (activeChat?.id === receipt.chatId) {
+        messagesContainer.querySelectorAll('.message.sent i.fa-check').forEach(icon => {
+            icon.className = 'fa-solid fa-check-double';
+            icon.title = 'Lida';
+        });
+    }
+}
+
+function handlePresence(presence) {
+    const contact = contacts.find(c => c.id === presence.userId);
+    if (contact) contact.status = presence.status;
+
+    chatsByContactId.forEach(chat => chat.participants
+        .filter(participant => participant.id === presence.userId)
+        .forEach(participant => participant.status = presence.status));
+
+    if (activeContact?.id === presence.userId) {
+        activeContact.status = presence.status;
+        renderActiveContactStatus();
+    }
+
+    renderSidebar();
+}
+
+function handleRealtimeError(error) {
+    let msg = error.message || 'Não foi possível enviar a mensagem.';
+    if (error.fields) {
+        msg += ` (${Object.values(error.fields).join(', ')})`;
+    }
+    alert(msg);
+}
+
+async function markActiveChatAsRead() {
+    const chat = activeChat;
+    chat.unreadCount = 0;
+    renderSidebar();
+
+    try {
+        await ChatService.markAsRead(chat.id);
+    } catch (error) {
+        console.error('Falha ao marcar mensagens como lidas', error);
+    }
 }
 
 function renderSidebar() {
@@ -68,6 +181,7 @@ function buildContactItem(contact) {
 
     const item = element('div', 'chat-item');
     if (activeContact?.id === contact.id) item.classList.add('active');
+    if (contact.status === 'ONLINE') item.classList.add('online');
 
     const avatar = element('img', 'avatar');
     avatar.src = avatarUrl(contact.name);
@@ -101,6 +215,7 @@ async function openConversation(contact) {
 
     document.getElementById('active-chat-name').textContent = contact.name;
     document.getElementById('active-chat-avatar').src = avatarUrl(contact.name);
+    renderActiveContactStatus();
     document.getElementById('chat-header').style.display = 'flex';
     document.getElementById('chat-input-area').style.display = 'block';
 
@@ -116,8 +231,7 @@ async function openConversation(contact) {
         renderHistory(history);
 
         if (chat.unreadCount > 0) {
-            await ChatService.markAsRead(chat.id);
-            chat.unreadCount = 0;
+            await markActiveChatAsRead();
         }
         renderSidebar();
     } catch (error) {
@@ -172,9 +286,23 @@ async function loadOlderMessages(button) {
     }
 }
 
+function appendMessage(message) {
+    if (messagesContainer.querySelector(`[data-message-id="${message.id}"]`)) return;
+
+    messagesContainer.querySelector('.chat-empty-state')?.remove();
+    messagesContainer.appendChild(buildMessage(message));
+    scrollToBottom();
+}
+
+function renderActiveContactStatus() {
+    document.getElementById('active-chat-status').textContent =
+        activeContact.status === 'ONLINE' ? 'online' : 'offline';
+}
+
 function buildMessage(message) {
     const sent = message.senderId === currentUser.id;
     const bubble = element('div', `message ${sent ? 'sent' : 'received'}`);
+    bubble.dataset.messageId = message.id;
 
     bubble.appendChild(element('p', null, message.content));
 
@@ -205,6 +333,15 @@ document.getElementById('message-form')?.addEventListener('submit', async (e) =>
 
     const chat = activeChat;
 
+    // Conectado: envia pelo WebSocket e a mensagem aparece quando o servidor a devolve
+    // em /user/queue/messages. Sem conexão: usa o REST como alternativa.
+    if (Realtime.connected) {
+        Realtime.sendMessage(chat.id, text);
+        msgInput.value = '';
+        msgInput.focus();
+        return;
+    }
+
     try {
         const message = await ChatService.send(chat.id, text);
 
@@ -212,9 +349,7 @@ document.getElementById('message-form')?.addEventListener('submit', async (e) =>
         chat.updatedAt = message.createdAt;
 
         if (activeChat?.id === chat.id) {
-            messagesContainer.querySelector('.chat-empty-state')?.remove();
-            messagesContainer.appendChild(buildMessage(message));
-            scrollToBottom();
+            appendMessage(message);
         }
 
         msgInput.value = '';
@@ -265,6 +400,10 @@ function infoMessage(text, extraClass) {
     const node = element('div', 'chat-info', text);
     if (extraClass) node.classList.add(extraClass);
     return node;
+}
+
+function findChatById(chatId) {
+    return [...chatsByContactId.values()].find(chat => chat.id === chatId);
 }
 
 function otherParticipant(chat) {

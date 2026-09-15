@@ -26,6 +26,8 @@ app:
     name: ${ADMIN_NAME:Administrador}
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  websocket:
+    allowed-origins: ${WS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
 
 server:
   port: ${SERVER_PORT:8080}

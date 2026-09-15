@@ -41,6 +41,7 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/register").permitAll()
 						.requestMatchers("/", "/*.html", "/css/**", "/js/**", "/img/**").permitAll()
+						.requestMatchers("/ws", "/ws/**").permitAll()
 						.requestMatchers(HttpMethod.PUT, "/api/v1/users/me").authenticated()
 						.requestMatchers(HttpMethod.PUT, "/api/v1/users/{id}").hasRole(Role.ADMIN.name())
 						.requestMatchers(HttpMethod.PATCH, "/api/v1/users/{id}/role").hasRole(Role.ADMIN.name())

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -32,6 +33,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +48,9 @@ class MessageServiceTest {
 	@Mock
 	private UserRepository userRepository;
 
+	@Mock
+	private ApplicationEventPublisher events;
+
 	private MessageService messageService;
 
 	private final User alexandre = usuario(1L, "Alexandre", "alexandre@email.com");
@@ -57,7 +62,7 @@ class MessageServiceTest {
 	@BeforeEach
 	void setUp() {
 		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository);
-		messageService = new MessageService(chatService, messageRepository);
+		messageService = new MessageService(chatService, messageRepository, events);
 
 		conversa = new Chat(alexandre, maria);
 		ReflectionTestUtils.setField(conversa, "id", 10L);
@@ -82,6 +87,31 @@ class MessageServiceTest {
 		assertThat(response.senderId()).isEqualTo(1L);
 		assertThat(response.chatId()).isEqualTo(10L);
 		assertThat(response.readAt()).isNull();
+	}
+
+	@Test
+	void envioDevePublicarEventoParaOsDoisParticipantes() {
+		logado(alexandre);
+		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
+		when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> comId(invocation.getArgument(0), 50L));
+
+		MessageResponse response = messageService.send(10L, "alexandre@email.com", new SendMessageRequest("oi"));
+
+		ArgumentCaptor<MessageSentEvent> event = ArgumentCaptor.forClass(MessageSentEvent.class);
+		verify(events).publishEvent(event.capture());
+		assertThat(event.getValue().message()).isEqualTo(response);
+		assertThat(event.getValue().recipientEmails()).containsExactly("alexandre@email.com", "maria@email.com");
+	}
+
+	@Test
+	void envioRecusadoNaoPublicaEvento() {
+		logado(joao);
+		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
+
+		assertThatThrownBy(() -> messageService.send(10L, "joao@email.com", new SendMessageRequest("oi")))
+				.isInstanceOf(ForbiddenException.class);
+
+		verifyNoInteractions(events);
 	}
 
 	@Test
@@ -178,6 +208,25 @@ class MessageServiceTest {
 		when(messageRepository.markAsRead(eq(10L), eq(2L), any(Instant.class))).thenReturn(3);
 
 		assertThat(messageService.markAsRead(10L, "maria@email.com").markedAsRead()).isEqualTo(3);
+
+		ArgumentCaptor<MessagesReadEvent> event = ArgumentCaptor.forClass(MessagesReadEvent.class);
+		verify(events).publishEvent(event.capture());
+		assertThat(event.getValue().receipt().chatId()).isEqualTo(10L);
+		assertThat(event.getValue().receipt().readerId()).isEqualTo(2L);
+		assertThat(event.getValue().receipt().markedAsRead()).isEqualTo(3);
+		assertThat(event.getValue().receipt().readAt()).isNotNull();
+		assertThat(event.getValue().recipientEmails()).containsExactly("alexandre@email.com", "maria@email.com");
+	}
+
+	@Test
+	void marcarComoLidaSemNadaPendenteNaoPublicaEvento() {
+		logado(maria);
+		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
+		when(messageRepository.markAsRead(eq(10L), eq(2L), any(Instant.class))).thenReturn(0);
+
+		assertThat(messageService.markAsRead(10L, "maria@email.com").markedAsRead()).isZero();
+
+		verifyNoInteractions(events);
 	}
 
 	@Test
