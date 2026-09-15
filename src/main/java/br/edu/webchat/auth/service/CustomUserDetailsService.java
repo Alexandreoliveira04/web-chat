@@ -6,8 +6,6 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
 
@@ -23,7 +21,7 @@ public class CustomUserDetailsService implements UserDetailsService {
 				.map(user -> org.springframework.security.core.userdetails.User
 						.withUsername(user.getEmail())
 						.password(user.getPassword())
-						.authorities(List.of())
+						.roles(user.getRole().name())
 						.build())
 				.orElseThrow(() -> new UsernameNotFoundException("Usuario nao encontrado"));
 	}

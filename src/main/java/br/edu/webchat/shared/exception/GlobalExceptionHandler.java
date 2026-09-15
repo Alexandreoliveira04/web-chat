@@ -65,6 +65,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 				pathOf(request)));
 	}
 
+	@ExceptionHandler(ForbiddenException.class)
+	public ResponseEntity<ApiError> handleForbidden(ForbiddenException ex, WebRequest request) {
+		return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiError.of(
+				HttpStatus.FORBIDDEN.value(),
+				HttpStatus.FORBIDDEN.getReasonPhrase(),
+				ex.getMessage(),
+				pathOf(request)));
+	}
+
 	@ExceptionHandler(ConflictException.class)
 	public ResponseEntity<ApiError> handleConflict(ConflictException ex, WebRequest request) {
 		return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(

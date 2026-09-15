@@ -6,7 +6,8 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 3 — AUTH**. O módulo `chat` ainda não foi implementado.
+> Estado atual: **Fase 3.1 — papéis e permissões** concluída. O módulo `chat` ainda não
+> foi implementado.
 
 ---
 
@@ -66,8 +67,8 @@ Públicos:
 
 ```http
 GET  /api/v1/health
+POST /api/v1/auth/register
 POST /api/v1/auth/login
-POST /api/v1/users
 ```
 
 Exigem `Authorization: Bearer <token>`:
@@ -75,8 +76,15 @@ Exigem `Authorization: Bearer <token>`:
 ```http
 GET  /api/v1/users
 GET  /api/v1/users/me
+PUT  /api/v1/users/me
 GET  /api/v1/users/{id}
-PUT  /api/v1/users/{id}
+```
+
+Exigem token de um usuário com papel `ADMIN`:
+
+```http
+PUT   /api/v1/users/{id}
+PATCH /api/v1/users/{id}/role
 ```
 
 Detalhes em [docs/user.md](docs/user.md) e [docs/auth.md](docs/auth.md).
@@ -100,11 +108,25 @@ Content-Type: application/json
 
 O `expiresIn` está em segundos.
 
+### Papéis
+
+Todo cadastro nasce `USER`. Um `ADMIN` pode atualizar qualquer colaborador e promover ou
+rebaixar outros usuários, mas nunca alterar o próprio papel. Detalhes em
+[docs/auth.md](docs/auth.md#autorização-por-papéis).
+
+O primeiro administrador é criado na inicialização a partir de `ADMIN_EMAIL` e
+`ADMIN_PASSWORD`. No perfil `dev` ele já existe: `admin@webchat.local` / `admin123`.
+
+```bash
+# promover o usuário 2 a ADMIN (com o token de um ADMIN)
+curl -X PATCH http://localhost:8080/api/v1/users/2/role   -H "Authorization: Bearer <token-admin>"   -H "Content-Type: application/json"   -d '{"role":"ADMIN"}'
+```
+
 ### Exemplo completo
 
 ```bash
 # 1. cadastrar (público)
-curl -X POST http://localhost:8080/api/v1/users \
+curl -X POST http://localhost:8080/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Alexandre Oliveira","email":"alexandre@email.com","password":"123456"}'
 
@@ -135,6 +157,9 @@ aos do `compose.yaml` para facilitar o desenvolvimento local:
 | `SERVER_PORT` | `8080`      |
 | `JWT_EXPIRATION` | `3600` (segundos) |
 | `JWT_SECRET` | **sem padrão** — obrigatória |
+| `ADMIN_EMAIL` | vazio — nenhum administrador inicial |
+| `ADMIN_PASSWORD` | vazio — obrigatória se o admin ainda não existir |
+| `ADMIN_NAME` | `Administrador` |
 
 `JWT_SECRET` não tem valor padrão de propósito: sem ela a aplicação não inicia, para
 que nenhum segredo fique embutido no código. Precisa de no mínimo 32 bytes (HS256).
@@ -150,9 +175,10 @@ $env:JWT_SECRET = "troque-por-um-valor-longo-e-aleatorio-de-32-bytes"
 JWT_SECRET="troque-por-um-valor-longo-e-aleatorio-de-32-bytes" ./mvnw spring-boot:run
 ```
 
-Alternativa para desenvolvimento: o perfil `dev` já traz um valor descartável, então
-`.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"` funciona sem a
-variável. Esse valor não serve para nenhum outro ambiente.
+Alternativa para desenvolvimento: o perfil `dev` já traz valores descartáveis de
+`JWT_SECRET` e do administrador inicial, então
+`.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"` funciona sem nenhuma
+variável. Esses valores não servem para nenhum outro ambiente.
 
 Esses padrões valem apenas para desenvolvimento local. Em qualquer outro ambiente
 as variáveis devem ser fornecidas externamente — nenhuma credencial real deve ser
@@ -184,7 +210,7 @@ Os testes usam um banco H2 em memória (perfil `test`), portanto não exigem Doc
 br.edu.webchat
 ├── WebChatApplication.java
 ├── auth/     config, controller, dto, filter, jwt, service
-├── user/     controller, dto, entity, repository, service
+├── user/     config, controller, dto, entity, repository, service
 ├── chat/     (Fases 4-6)
 └── shared/
     ├── config/        PasswordEncoder (BCrypt)

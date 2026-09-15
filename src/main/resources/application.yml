@@ -21,5 +21,11 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:3600}
 
+app:
+  admin:
+    name: ${ADMIN_NAME:Administrador}
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
+
 server:
   port: ${SERVER_PORT:8080}
