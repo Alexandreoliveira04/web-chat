@@ -780,6 +780,11 @@ Fluxos mínimos:
 - envio de mensagem;
 - consulta de histórico.
 
+Os cinco fluxos são cobertos de ponta a ponta por `MvpFlowIntegrationTest`, que sobe o
+servidor em porta real e percorre cadastro → login → criação da conversa → envio → histórico
+→ leitura, verificando também que endpoint protegido exige token e que quem não participa
+recebe 403. O tempo real é coberto por `RealtimeIntegrationTest`, com cliente STOMP real.
+
 ---
 
 ## 21. Docker
@@ -792,6 +797,18 @@ O projeto deverá possuir:
 Durante o desenvolvimento inicial, não é obrigatório executar o Spring Boot dentro do Docker.
 
 A prioridade é manter o banco containerizado e o backend executando pela IDE/Maven.
+
+### Implementado (Módulo 4)
+
+- **`Dockerfile` multi-stage**: build com `maven:3.9-eclipse-temurin-17` (dependências em
+  camada separada do código, para aproveitar cache) e runtime com
+  `eclipse-temurin:17-jre-alpine`, executando como usuário sem privilégios.
+- **`compose.yaml`**: o serviço `app` fica no profile `app`, então `docker compose up -d`
+  continua subindo apenas o banco (fluxo de desenvolvimento) e
+  `docker compose --profile app up -d --build` sobe banco + aplicação. O `app` espera o
+  healthcheck do PostgreSQL e tem o próprio healthcheck em `/api/v1/health`.
+- Toda a configuração do container vem de variáveis de ambiente, com padrões descartáveis
+  apenas para uso local.
 
 ---
 
@@ -990,7 +1007,7 @@ Exemplo:
 
 ### Fase 8 — DEPLOY
 
-- [ ] Docker;
+- [x] Docker (`Dockerfile` + serviço `app` no `compose.yaml`);
 - [ ] configuração de produção;
 - [ ] Google Cloud;
 - [ ] banco;
@@ -1034,10 +1051,20 @@ O MVP será considerado concluído quando:
 
 ## 28. Estado atual
 
-Fases 1 a 6 concluídas: fundação, USER, AUTH com papéis (Módulo 0), conversas (Módulo 1),
-mensagens via REST (Módulo 2) e tempo real via WebSocket (Módulo 3). Todos os critérios de
-conclusão do MVP (§26) estão atendidos. Próxima etapa: Módulo 4 — Dockerfile, testes do fluxo
-completo e fechamento da documentação.
+**MVP concluído.** Fases 1 a 6 implementadas — fundação, USER, AUTH com papéis (Módulo 0),
+conversas (Módulo 1), mensagens via REST (Módulo 2) e tempo real via WebSocket (Módulo 3) —
+mais o Módulo 4: `Dockerfile`, backend containerizado no `compose.yaml` e teste de ponta a
+ponta do fluxo mínimo. Todos os critérios do §26 estão atendidos.
+
+O que permanece fora do escopo entregue, para eventual continuidade:
+
+- **Fase 7 — frontend Next.js.** O front atual é um conjunto de páginas estáticas
+  (HTML/CSS/JS) servidas pelo próprio Spring Boot em `src/main/resources/static`, que consome
+  a API REST e o WebSocket.
+- **Fase 8 — deploy na Google Cloud.** O `Dockerfile` e a configuração por variáveis de
+  ambiente já existem; faltam provisionar banco gerenciado, domínio/HTTPS e monitoramento.
+  Antes de escalar para mais de uma instância, ver a restrição do §22 sobre o broker em
+  memória.
 
 O frontend atual é um conjunto de páginas estáticas (HTML/CSS/JS) servidas pelo próprio
 Spring Boot em `src/main/resources/static`, usado para demonstrar a API. O frontend

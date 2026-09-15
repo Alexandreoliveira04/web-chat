@@ -6,8 +6,9 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 6 — tempo real via WebSocket** concluída; os critérios do MVP estão
-> atendidos. Falta o Módulo 4 (Dockerfile e fechamento).
+> Estado atual: **MVP concluído** — cadastro, login com papéis, conversas, mensagens,
+> histórico, leitura e tempo real, com backend containerizado. Fora do escopo entregue:
+> frontend Next.js (fase 7) e deploy na Google Cloud (fase 8).
 
 ---
 
@@ -35,6 +36,36 @@ Para parar:
 
 ```bash
 docker compose down
+```
+
+---
+
+## Tudo em containers (opcional)
+
+Além do banco, o backend também pode rodar em container:
+
+```bash
+docker compose --profile app up -d --build
+```
+
+Isso constrói a imagem pelo `Dockerfile` e sobe banco + aplicação em
+`http://localhost:8080`, já com o administrador de desenvolvimento
+(`admin@webchat.local` / `admin123`). Sem o `--profile app`, o `docker compose up -d`
+continua subindo só o banco.
+
+```bash
+docker compose --profile app logs -f app   # acompanhar o log
+docker compose --profile app down          # parar tudo
+```
+
+Em qualquer outro ambiente, informe `JWT_SECRET`, `ADMIN_EMAIL` e `ADMIN_PASSWORD` por
+variável de ambiente: os valores padrão do `compose.yaml` são descartáveis e servem apenas
+para desenvolvimento local.
+
+Para construir a imagem sozinha:
+
+```bash
+docker build -t web-chat .
 ```
 
 ---
@@ -261,6 +292,12 @@ O Hibernate roda em `ddl-auto: validate` e nunca altera o banco.
 ```
 
 Os testes usam um banco H2 em memória (perfil `test`), portanto não exigem Docker.
+
+São 161 testes: unitários dos services, testes de controller (`@WebMvcTest`), de repository
+(`@DataJpaTest`) e de integração com a cadeia de segurança real — incluindo
+`RealtimeIntegrationTest`, que sobe o servidor e conversa por WebSocket, e
+`MvpFlowIntegrationTest`, que percorre o fluxo completo do MVP: cadastro → login → criação da
+conversa → envio → histórico → leitura.
 
 ---
 

@@ -6,6 +6,8 @@ A fonte de verdade do projeto é a [WEB-CHAT-SPEC.md](../WEB-CHAT-SPEC.md). Este
 documentos detalham cada módulo e registram decisões tomadas durante a
 implementação; em caso de divergência, a spec prevalece.
 
+Para instalar, rodar e testar o projeto, ver o [README](../README.md).
+
 ## Módulos
 
 | Módulo | Responsabilidade | Fase | Situação |

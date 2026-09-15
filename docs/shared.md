@@ -166,6 +166,7 @@ desenvolvimento local:
 | ------ | ------- | --- |
 | (nenhum) | `application.yml` | Execução local contra o PostgreSQL do Docker |
 | `dev` | `application-dev.yml` | Log de SQL e de web; `JWT_SECRET` e administrador descartáveis |
+| (nenhum, em container) | `compose.yaml`, profile `app` | Backend no Docker; as variáveis vêm do `environment` do serviço |
 | `test` | `src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
 
 O perfil `test` existe para que `mvnw test` rode sem exigir Docker. A contrapartida é
