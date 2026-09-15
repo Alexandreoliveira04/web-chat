@@ -6,8 +6,8 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 4 — conversas** concluída. Mensagens (fase 5) e WebSocket (fase 6)
-> ainda não foram implementados.
+> Estado atual: **Fase 5 — mensagens via REST** concluída. O tempo real (WebSocket, fase 6)
+> ainda não foi implementado.
 
 ---
 
@@ -81,6 +81,9 @@ GET  /api/v1/users/{id}
 GET  /api/v1/chats
 POST /api/v1/chats
 GET  /api/v1/chats/{chatId}
+GET  /api/v1/chats/{chatId}/messages?before={id}&size={1-100}
+POST /api/v1/chats/{chatId}/messages
+PATCH /api/v1/chats/{chatId}/messages/read
 ```
 
 Exigem token de um usuário com papel `ADMIN`:
@@ -153,10 +156,28 @@ curl -X POST http://localhost:8080/api/v1/chats \
   -H "Content-Type: application/json" \
   -d '{"participantId":2}'
 
-# 5. listar minhas conversas (mais recentes primeiro)
+# 5. listar minhas conversas (mais recentes primeiro, com lastMessage e unreadCount)
 curl http://localhost:8080/api/v1/chats \
   -H "Authorization: Bearer <token>"
+
+# 6. enviar mensagem na conversa 1
+curl -X POST http://localhost:8080/api/v1/chats/1/messages \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"oi, tudo bem?"}'
+
+# 7. histórico: 50 mais recentes; para as anteriores, repita com before=<nextBefore>
+curl "http://localhost:8080/api/v1/chats/1/messages?size=50" \
+  -H "Authorization: Bearer <token>"
+
+# 8. marcar como lidas as mensagens recebidas
+curl -X PATCH http://localhost:8080/api/v1/chats/1/messages/read \
+  -H "Authorization: Bearer <token>"
 ```
+
+A interface web em `http://localhost:8080` já usa esses endpoints: abrir um contato inicia
+ou reaproveita a conversa, carrega o histórico e marca as mensagens como lidas. Mensagens
+recebidas ainda só aparecem ao reabrir a conversa — o tempo real chega na fase 6.
 
 ---
 
@@ -229,7 +250,7 @@ br.edu.webchat
 ├── WebChatApplication.java
 ├── auth/     config, controller, dto, filter, jwt, service
 ├── user/     config, controller, dto, entity, repository, service
-├── chat/     controller, dto, entity, repository, service  (conversas; mensagens e WebSocket nas fases 5-6)
+├── chat/     controller, dto, entity, repository, service  (conversas e mensagens; WebSocket na fase 6)
 └── shared/
     ├── config/        PasswordEncoder (BCrypt)
     ├── controller/    health check

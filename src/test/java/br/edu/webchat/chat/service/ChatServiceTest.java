@@ -5,7 +5,9 @@ import br.edu.webchat.chat.dto.CreateChatRequest;
 import br.edu.webchat.chat.dto.CreateChatResult;
 import br.edu.webchat.chat.dto.ParticipantResponse;
 import br.edu.webchat.chat.entity.Chat;
+import br.edu.webchat.chat.entity.Message;
 import br.edu.webchat.chat.repository.ChatRepository;
+import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.shared.exception.BadRequestException;
 import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
@@ -36,6 +38,9 @@ class ChatServiceTest {
 	private ChatRepository chatRepository;
 
 	@Mock
+	private MessageRepository messageRepository;
+
+	@Mock
 	private UserRepository userRepository;
 
 	private ChatService chatService;
@@ -46,7 +51,7 @@ class ChatServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		chatService = new ChatService(chatRepository, userRepository);
+		chatService = new ChatService(chatRepository, messageRepository, userRepository);
 	}
 
 	@Test
@@ -148,6 +153,35 @@ class ChatServiceTest {
 	}
 
 	@Test
+	void listagemDeveTrazerUltimaMensagemENaoLidasSemConsultarPorConversa() {
+		Chat comMaria = chat(10L, alexandre, maria);
+		Chat comJoao = chat(11L, alexandre, joao);
+		Message ultima = new Message(comMaria, maria, "oi, tudo bem?");
+		ReflectionTestUtils.setField(ultima, "id", 99L);
+		when(userRepository.findByEmail("alexandre@email.com")).thenReturn(Optional.of(alexandre));
+		when(chatRepository.findAllByParticipantId(1L)).thenReturn(List.of(comJoao, comMaria));
+		when(messageRepository.findLastMessagesOfChats(List.of(11L, 10L))).thenReturn(List.of(ultima));
+		when(messageRepository.countUnreadByChat(List.of(11L, 10L), 1L)).thenReturn(List.of(naoLidas(10L, 3L)));
+
+		List<ChatResponse> chats = chatService.findMyChats("alexandre@email.com");
+
+		assertThat(chats.get(0).lastMessage()).isNull();
+		assertThat(chats.get(0).unreadCount()).isZero();
+		assertThat(chats.get(1).lastMessage().content()).isEqualTo("oi, tudo bem?");
+		assertThat(chats.get(1).lastMessage().senderId()).isEqualTo(2L);
+		assertThat(chats.get(1).unreadCount()).isEqualTo(3);
+	}
+
+	@Test
+	void usuarioSemConversasNaoDeveConsultarMensagens() {
+		when(userRepository.findByEmail("joao@email.com")).thenReturn(Optional.of(joao));
+		when(chatRepository.findAllByParticipantId(3L)).thenReturn(List.of());
+
+		assertThat(chatService.findMyChats("joao@email.com")).isEmpty();
+		verify(messageRepository, never()).findLastMessagesOfChats(any());
+	}
+
+	@Test
 	void participanteDeveConsultarAConversa() {
 		when(userRepository.findByEmail("maria@email.com")).thenReturn(Optional.of(maria));
 		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(chat(10L, alexandre, maria)));
@@ -175,6 +209,20 @@ class ChatServiceTest {
 
 		assertThatThrownBy(() -> chatService.findById(99L, "alexandre@email.com"))
 				.isInstanceOf(NotFoundException.class);
+	}
+
+	private static MessageRepository.UnreadCount naoLidas(Long chatId, Long total) {
+		return new MessageRepository.UnreadCount() {
+			@Override
+			public Long getChatId() {
+				return chatId;
+			}
+
+			@Override
+			public Long getTotal() {
+				return total;
+			}
+		};
 	}
 
 	private static User usuario(Long id, String name, String email) {

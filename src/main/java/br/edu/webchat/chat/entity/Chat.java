@@ -65,6 +65,10 @@ public class Chat {
 		this.updatedAt = Instant.now();
 	}
 
+	public void registerActivity() {
+		this.updatedAt = Instant.now();
+	}
+
 	public boolean hasParticipant(Long userId) {
 		return participants.stream().anyMatch(user -> user.getId().equals(userId));
 	}

@@ -68,7 +68,8 @@ Toda resposta de erro da API usa a mesma estrutura, definida em `ApiError`:
 
 | Situação | Exceção | Status |
 | -------- | ------- | ------ |
-| Entrada inválida | `MethodArgumentNotValidException` | 400 |
+| Corpo inválido (`@Valid @RequestBody`) | `MethodArgumentNotValidException` | 400 |
+| Parâmetro inválido (`@RequestParam` com `@Min`, `@Max`, `@Positive`...) | `HandlerMethodValidationException` | 400 |
 | Regra de negócio rejeita a entrada | `BadRequestException` | 400 |
 | Credenciais inválidas | `UnauthorizedException` | 401 |
 | Operação proibida para o usuário autenticado | `ForbiddenException` | 403 |
@@ -89,7 +90,11 @@ devolve uma mensagem genérica, para não vazar detalhe interno ao cliente.
 ### Erros de validação
 
 Erros de Bean Validation retornam 400 com o mapa `fields`, um par por campo
-rejeitado:
+rejeitado. Vale tanto para o corpo da requisição quanto para parâmetros de query
+validados no controller — nesse caso a chave é o nome do parâmetro (ex.:
+`GET /chats/1/messages?size=0` → `"fields": { "size": "deve ser maior que ou igual à 1" }`).
+Os dois handlers (`handleMethodArgumentNotValid` e `handleHandlerMethodValidationException`)
+são sobrescritos para produzir o mesmo formato:
 
 ```json
 {

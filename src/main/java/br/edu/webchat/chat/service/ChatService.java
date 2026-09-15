@@ -4,7 +4,9 @@ import br.edu.webchat.chat.dto.ChatResponse;
 import br.edu.webchat.chat.dto.CreateChatRequest;
 import br.edu.webchat.chat.dto.CreateChatResult;
 import br.edu.webchat.chat.entity.Chat;
+import br.edu.webchat.chat.entity.Message;
 import br.edu.webchat.chat.repository.ChatRepository;
+import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.shared.exception.BadRequestException;
 import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
@@ -15,16 +17,22 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class ChatService {
 
 	private final ChatRepository chatRepository;
+	private final MessageRepository messageRepository;
 	private final UserRepository userRepository;
 
-	public ChatService(ChatRepository chatRepository, UserRepository userRepository) {
+	public ChatService(ChatRepository chatRepository, MessageRepository messageRepository,
+			UserRepository userRepository) {
 		this.chatRepository = chatRepository;
+		this.messageRepository = messageRepository;
 		this.userRepository = userRepository;
 	}
 
@@ -42,15 +50,16 @@ public class ChatService {
 
 		Optional<Chat> existing = chatRepository.findByDirectKey(directKey);
 		if (existing.isPresent()) {
-			return new CreateChatResult(ChatResponse.from(existing.get()), false);
+			return new CreateChatResult(toResponse(existing.get(), me), false);
 		}
 
 		try {
-			return new CreateChatResult(ChatResponse.from(chatRepository.saveAndFlush(new Chat(me, other))), true);
+			Chat created = chatRepository.saveAndFlush(new Chat(me, other));
+			return new CreateChatResult(ChatResponse.from(created, null, 0), true);
 		}
 		catch (DataIntegrityViolationException ex) {
 			return chatRepository.findByDirectKey(directKey)
-					.map(created -> new CreateChatResult(ChatResponse.from(created), false))
+					.map(createdMeanwhile -> new CreateChatResult(toResponse(createdMeanwhile, me), false))
 					.orElseThrow(() -> ex);
 		}
 	}
@@ -58,29 +67,52 @@ public class ChatService {
 	@Transactional(readOnly = true)
 	public List<ChatResponse> findMyChats(String authenticatedEmail) {
 		User me = findAuthenticatedUser(authenticatedEmail);
-
-		return chatRepository.findAllByParticipantId(me.getId()).stream()
-				.map(ChatResponse::from)
-				.toList();
+		return toResponses(chatRepository.findAllByParticipantId(me.getId()), me);
 	}
 
 	@Transactional(readOnly = true)
 	public ChatResponse findById(Long chatId, String authenticatedEmail) {
 		User me = findAuthenticatedUser(authenticatedEmail);
+		return toResponse(findParticipantChat(chatId, me), me);
+	}
 
+	Chat findParticipantChat(Long chatId, User user) {
 		Chat chat = chatRepository.findWithParticipantsById(chatId)
 				.orElseThrow(() -> new NotFoundException("Conversa nao encontrada: " + chatId));
 
-		if (!chat.hasParticipant(me.getId())) {
+		if (!chat.hasParticipant(user.getId())) {
 			throw new ForbiddenException("Voce nao participa desta conversa");
 		}
 
-		return ChatResponse.from(chat);
+		return chat;
 	}
 
-	private User findAuthenticatedUser(String email) {
+	User findAuthenticatedUser(String email) {
 		return userRepository.findByEmail(email.trim().toLowerCase())
 				.orElseThrow(() -> new NotFoundException("Usuario nao encontrado: " + email));
+	}
+
+	private ChatResponse toResponse(Chat chat, User me) {
+		return toResponses(List.of(chat), me).get(0);
+	}
+
+	private List<ChatResponse> toResponses(List<Chat> chats, User me) {
+		if (chats.isEmpty()) {
+			return List.of();
+		}
+
+		List<Long> chatIds = chats.stream().map(Chat::getId).toList();
+
+		Map<Long, Message> lastMessages = messageRepository.findLastMessagesOfChats(chatIds).stream()
+				.collect(Collectors.toMap(message -> message.getChat().getId(), Function.identity()));
+
+		Map<Long, Long> unreadCounts = messageRepository.countUnreadByChat(chatIds, me.getId()).stream()
+				.collect(Collectors.toMap(MessageRepository.UnreadCount::getChatId, MessageRepository.UnreadCount::getTotal));
+
+		return chats.stream()
+				.map(chat -> ChatResponse.from(chat, lastMessages.get(chat.getId()),
+						unreadCounts.getOrDefault(chat.getId(), 0L)))
+				.toList();
 	}
 
 }

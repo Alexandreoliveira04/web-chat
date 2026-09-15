@@ -2,6 +2,7 @@ package br.edu.webchat.chat;
 
 import br.edu.webchat.auth.jwt.JwtService;
 import br.edu.webchat.chat.repository.ChatRepository;
+import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.user.dto.CreateUserRequest;
 import br.edu.webchat.user.repository.UserRepository;
 import br.edu.webchat.user.service.UserService;
@@ -41,6 +42,9 @@ class ChatIntegrationTest {
 	private ChatRepository chatRepository;
 
 	@Autowired
+	private MessageRepository messageRepository;
+
+	@Autowired
 	private JwtService jwtService;
 
 	private Long alexandreId;
@@ -54,10 +58,11 @@ class ChatIntegrationTest {
 		userService.create(new CreateUserRequest("Joao", "joao@email.com", "123456"));
 	}
 
-	// chat_participants referencia users: as conversas precisam sair antes dos usuarios,
-	// inclusive para nao quebrar a limpeza de outras classes de teste que usam o mesmo banco.
+	// messages referencia chats e users, chat_participants referencia users: a limpeza segue
+	// essa ordem, inclusive para nao quebrar a limpeza de outras classes que usam o mesmo banco.
 	@AfterEach
 	void limparBase() {
+		messageRepository.deleteAll();
 		chatRepository.deleteAll();
 		userRepository.deleteAll();
 	}

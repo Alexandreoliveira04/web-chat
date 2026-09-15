@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import java.util.LinkedHashMap;
@@ -28,6 +29,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		Map<String, String> fields = new LinkedHashMap<>();
 		ex.getBindingResult().getFieldErrors()
 				.forEach(error -> fields.putIfAbsent(error.getField(), error.getDefaultMessage()));
+
+		return ResponseEntity.status(status).body(ApiError.ofValidation(
+				status.value(),
+				reasonOf(status),
+				"Dados invalidos",
+				pathOf(request),
+				fields));
+	}
+
+	@Override
+	protected ResponseEntity<Object> handleHandlerMethodValidationException(HandlerMethodValidationException ex,
+			HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		Map<String, String> fields = new LinkedHashMap<>();
+		ex.getParameterValidationResults().forEach(result -> result.getResolvableErrors()
+				.forEach(error -> fields.putIfAbsent(
+						result.getMethodParameter().getParameterName(), error.getDefaultMessage())));
 
 		return ResponseEntity.status(status).body(ApiError.ofValidation(
 				status.value(),

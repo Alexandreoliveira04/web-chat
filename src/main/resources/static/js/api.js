@@ -86,3 +86,33 @@ const UserService = {
         return apiFetch('/users');
     }
 };
+
+const ChatService = {
+    async listChats() {
+        return apiFetch('/chats');
+    },
+
+    async open(participantId) {
+        return apiFetch('/chats', {
+            method: 'POST',
+            body: JSON.stringify({ participantId })
+        });
+    },
+
+    async history(chatId, before = null) {
+        const params = new URLSearchParams({ size: 50 });
+        if (before) params.set('before', before);
+        return apiFetch(`/chats/${chatId}/messages?${params}`);
+    },
+
+    async send(chatId, content) {
+        return apiFetch(`/chats/${chatId}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ content })
+        });
+    },
+
+    async markAsRead(chatId) {
+        return apiFetch(`/chats/${chatId}/messages/read`, { method: 'PATCH' });
+    }
+};

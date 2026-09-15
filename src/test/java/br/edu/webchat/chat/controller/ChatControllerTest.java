@@ -3,6 +3,7 @@ package br.edu.webchat.chat.controller;
 import br.edu.webchat.chat.dto.ChatResponse;
 import br.edu.webchat.chat.dto.CreateChatRequest;
 import br.edu.webchat.chat.dto.CreateChatResult;
+import br.edu.webchat.chat.dto.MessageResponse;
 import br.edu.webchat.chat.dto.ParticipantResponse;
 import br.edu.webchat.chat.service.ChatService;
 import br.edu.webchat.shared.exception.BadRequestException;
@@ -50,6 +51,8 @@ class ChatControllerTest {
 	private static final ChatResponse CONVERSA = new ChatResponse(10L,
 			List.of(new ParticipantResponse(1L, "Alexandre", EMAIL, UserStatus.OFFLINE),
 					new ParticipantResponse(2L, "Maria", "maria@email.com", UserStatus.ONLINE)),
+			new MessageResponse(99L, 10L, 2L, "oi, tudo bem?", Instant.parse("2026-09-14T22:05:00Z"), null),
+			3,
 			Instant.parse("2026-09-14T22:00:00Z"), Instant.parse("2026-09-14T22:00:00Z"));
 
 	@Test
@@ -110,7 +113,10 @@ class ChatControllerTest {
 		mockMvc.perform(get("/api/v1/chats").principal(LOGADO))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.length()").value(1))
-				.andExpect(jsonPath("$[0].id").value(10));
+				.andExpect(jsonPath("$[0].id").value(10))
+				.andExpect(jsonPath("$[0].lastMessage.content").value("oi, tudo bem?"))
+				.andExpect(jsonPath("$[0].lastMessage.senderId").value(2))
+				.andExpect(jsonPath("$[0].unreadCount").value(3));
 	}
 
 	@Test

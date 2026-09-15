@@ -306,11 +306,11 @@ Estrutura:
 
 ```text
 chat/
-├── controller/   ChatController
+├── controller/   ChatController, MessageController
 ├── dto/
-├── entity/       Chat
-├── repository/   ChatRepository
-├── service/      ChatService
+├── entity/       Chat, Message
+├── repository/   ChatRepository, MessageRepository
+├── service/      ChatService, MessageService
 └── websocket/    (fase 6)
 ```
 
@@ -447,10 +447,14 @@ read_at
 Regras:
 
 - uma mensagem pertence a uma conversa;
-- uma mensagem possui exatamente um remetente;
-- o conteúdo não pode ser vazio;
+- uma mensagem possui exatamente um remetente, sempre o usuário autenticado que a enviou;
+- somente participantes da conversa enviam e leem mensagens;
+- o conteúdo não pode ser vazio nem só espaços (validado na API e por `CHECK` no banco) e tem no máximo 2000 caracteres;
+- espaços nas pontas do conteúdo são removidos antes de gravar;
 - `created_at` é preenchido automaticamente;
-- `read_at` pode ser nulo.
+- `read_at` pode ser nulo; é preenchido quando o destinatário marca a conversa como lida;
+- mensagens não são editadas nem excluídas (fora do escopo);
+- enviar uma mensagem atualiza `chats.updated_at` (última atividade da conversa).
 
 ---
 
@@ -503,17 +507,33 @@ PATCH /api/v1/users/{id}/role     (ADMIN)
 ### Chats
 
 ```http
-GET  /api/v1/chats                        (implementado)
-POST /api/v1/chats                        (implementado)
-GET  /api/v1/chats/{chatId}               (implementado)
-GET  /api/v1/chats/{chatId}/messages      (fase 5)
-POST /api/v1/chats/{chatId}/messages      (fase 5)
+GET   /api/v1/chats
+POST  /api/v1/chats
+GET   /api/v1/chats/{chatId}
+GET   /api/v1/chats/{chatId}/messages?before={messageId}&size={1-100}
+POST  /api/v1/chats/{chatId}/messages
+PATCH /api/v1/chats/{chatId}/messages/read
 ```
 
 `POST /api/v1/chats` recebe `{ "participantId": <id> }` e responde `201` com `Location`
 quando cria a conversa, ou `200` com a conversa já existente entre os dois usuários.
-Consultar uma conversa da qual o usuário não participa resulta em `403`, inclusive para
-`ADMIN`.
+Qualquer endpoint com `{chatId}` de uma conversa da qual o usuário não participa resulta em
+`403`, inclusive para `ADMIN`.
+
+Decisões da Fase 5:
+
+- **listagem de conversas** (`GET /chats`, `GET /chats/{chatId}`) traz `lastMessage` e
+  `unreadCount` (mensagens do outro participante ainda não lidas), calculados na consulta
+  a partir de `messages`, sem colunas denormalizadas em `chats`;
+- **histórico paginado por cursor**: sem `before`, as `size` mensagens mais recentes (padrão
+  50); com `before`, as anteriores ao id informado. A resposta traz as mensagens em ordem
+  cronológica, `hasMore` e `nextBefore`. Cursor em vez de offset para que mensagens novas
+  não desloquem as páginas;
+- **leitura explícita**: `PATCH /chats/{chatId}/messages/read` marca como lidas todas as
+  mensagens recebidas ainda não lidas e devolve a quantidade; o `GET` do histórico não
+  altera dados;
+- `POST /chats/{chatId}/messages` recebe `{ "content": "..." }` e responde `201` com a
+  mensagem criada.
 
 Os endpoints poderão evoluir conforme a implementação.
 
@@ -707,7 +727,7 @@ src/main/resources/db/migration/
 ├── V4__create_chats.sql                  (aplicada)
 ├── V5__create_chat_participants.sql      (aplicada)
 ├── V6__add_direct_key_to_chats.sql       (aplicada)
-└── V7__create_messages.sql               (prevista)
+└── V7__create_messages.sql               (aplicada)
 ```
 
 Migrations já aplicadas nunca devem ser editadas; qualquer mudança de schema entra em uma nova versão.
@@ -908,12 +928,14 @@ Exemplo:
 
 ### Fase 5 — MESSAGE
 
-- [ ] entidade Message;
-- [ ] migration;
-- [ ] envio;
-- [ ] histórico;
-- [ ] leitura;
-- [ ] testes.
+- [x] entidade Message;
+- [x] migration;
+- [x] envio;
+- [x] histórico (paginação por cursor);
+- [x] leitura;
+- [x] última mensagem e não lidas na listagem de conversas;
+- [x] integração das páginas estáticas com a API de conversas e mensagens;
+- [x] testes.
 
 ### Fase 6 — WEBSOCKET
 
@@ -954,8 +976,8 @@ O MVP será considerado concluído quando:
 - [x] um usuário puder realizar login;
 - [x] endpoints protegidos exigirem autenticação;
 - [x] dois usuários puderem iniciar uma conversa;
-- [ ] mensagens forem persistidas no PostgreSQL;
-- [ ] o histórico puder ser consultado;
+- [x] mensagens forem persistidas no PostgreSQL;
+- [x] o histórico puder ser consultado;
 - [ ] mensagens puderem ser recebidas em tempo real;
 - [x] o backend puder ser executado localmente;
 - [x] o PostgreSQL puder ser iniciado via Docker Compose;
@@ -981,7 +1003,7 @@ O MVP será considerado concluído quando:
 ## 28. Estado atual
 
 Fases 1, 2, 3 (incluindo autorização por papéis, Fase 3.1 / Módulo 0) e 4 (conversas,
-Módulo 1) concluídas. Próxima etapa: Fase 5 — MESSAGE.
+Módulo 1) e 5 (mensagens via REST, Módulo 2) concluídas. Próxima etapa: Fase 6 — WEBSOCKET.
 
 O frontend atual é um conjunto de páginas estáticas (HTML/CSS/JS) servidas pelo próprio
 Spring Boot em `src/main/resources/static`, usado para demonstrar a API. O frontend
