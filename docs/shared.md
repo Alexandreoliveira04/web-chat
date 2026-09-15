@@ -17,6 +17,7 @@ shared/
 │   └── HealthController
 └── exception/
     ├── ApiError
+    ├── BadRequestException
     ├── ConflictException
     ├── ForbiddenException
     ├── GlobalExceptionHandler
@@ -46,8 +47,8 @@ Toda resposta de erro da API usa a mesma estrutura, definida em `ApiError`:
   "timestamp": "2026-09-09T02:04:36.733641600Z",
   "status": 404,
   "error": "Not Found",
-  "message": "Chat nao encontrado",
-  "path": "/api/v1/chats/9f1c..."
+  "message": "Conversa nao encontrada: 99",
+  "path": "/api/v1/chats/99"
 }
 ```
 
@@ -68,6 +69,7 @@ Toda resposta de erro da API usa a mesma estrutura, definida em `ApiError`:
 | Situação | Exceção | Status |
 | -------- | ------- | ------ |
 | Entrada inválida | `MethodArgumentNotValidException` | 400 |
+| Regra de negócio rejeita a entrada | `BadRequestException` | 400 |
 | Credenciais inválidas | `UnauthorizedException` | 401 |
 | Operação proibida para o usuário autenticado | `ForbiddenException` | 403 |
 | Recurso inexistente | `NotFoundException` | 404 |
@@ -108,11 +110,16 @@ rejeitado:
 Uma por status HTTP, sem hierarquia intermediária. Os services as lançam diretamente:
 
 ```java
+throw new BadRequestException("Nao e possivel iniciar uma conversa consigo mesmo"); // 400
 throw new UnauthorizedException("E-mail ou senha invalidos");       // 401
 throw new ForbiddenException("Nao e permitido alterar o proprio papel"); // 403
 throw new NotFoundException("Usuario nao encontrado");              // 404
 throw new ConflictException("E-mail ja cadastrado");                // 409
 ```
+
+`BadRequestException` cobre o 400 que o Bean Validation não consegue expressar, porque
+depende de estado (ex.: `participantId` igual ao próprio usuário autenticado). Ela não
+tem o mapa `fields`: a mensagem descreve a regra violada.
 
 `ForbiddenException` é para regras de negócio avaliadas no service (ex.: alterar o próprio
 papel, ou acessar uma conversa da qual não participa). Papel insuficiente para uma rota é

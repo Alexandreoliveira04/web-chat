@@ -47,6 +47,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 				pathOf(request)));
 	}
 
+	@ExceptionHandler(BadRequestException.class)
+	public ResponseEntity<ApiError> handleBadRequest(BadRequestException ex, WebRequest request) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiError.of(
+				HttpStatus.BAD_REQUEST.value(),
+				HttpStatus.BAD_REQUEST.getReasonPhrase(),
+				ex.getMessage(),
+				pathOf(request)));
+	}
+
 	@ExceptionHandler(NotFoundException.class)
 	public ResponseEntity<ApiError> handleNotFound(NotFoundException ex, WebRequest request) {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiError.of(

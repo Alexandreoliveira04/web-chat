@@ -6,8 +6,8 @@ Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo M
 A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
 documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **Fase 3.1 — papéis e permissões** concluída. O módulo `chat` ainda não
-> foi implementado.
+> Estado atual: **Fase 4 — conversas** concluída. Mensagens (fase 5) e WebSocket (fase 6)
+> ainda não foram implementados.
 
 ---
 
@@ -78,6 +78,9 @@ GET  /api/v1/users
 GET  /api/v1/users/me
 PUT  /api/v1/users/me
 GET  /api/v1/users/{id}
+GET  /api/v1/chats
+POST /api/v1/chats
+GET  /api/v1/chats/{chatId}
 ```
 
 Exigem token de um usuário com papel `ADMIN`:
@@ -87,7 +90,8 @@ PUT   /api/v1/users/{id}
 PATCH /api/v1/users/{id}/role
 ```
 
-Detalhes em [docs/user.md](docs/user.md) e [docs/auth.md](docs/auth.md).
+Detalhes em [docs/user.md](docs/user.md), [docs/auth.md](docs/auth.md) e
+[docs/chat.md](docs/chat.md).
 
 ### Login
 
@@ -119,7 +123,10 @@ O primeiro administrador é criado na inicialização a partir de `ADMIN_EMAIL` 
 
 ```bash
 # promover o usuário 2 a ADMIN (com o token de um ADMIN)
-curl -X PATCH http://localhost:8080/api/v1/users/2/role   -H "Authorization: Bearer <token-admin>"   -H "Content-Type: application/json"   -d '{"role":"ADMIN"}'
+curl -X PATCH http://localhost:8080/api/v1/users/2/role \
+  -H "Authorization: Bearer <token-admin>" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"ADMIN"}'
 ```
 
 ### Exemplo completo
@@ -137,6 +144,17 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 # 3. usar o token
 curl http://localhost:8080/api/v1/users/me \
+  -H "Authorization: Bearer <token>"
+
+# 4. iniciar conversa com o usuário 2
+#    201 quando cria; 200 com a mesma conversa se ela já existir
+curl -X POST http://localhost:8080/api/v1/chats \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"participantId":2}'
+
+# 5. listar minhas conversas (mais recentes primeiro)
+curl http://localhost:8080/api/v1/chats \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -211,7 +229,7 @@ br.edu.webchat
 ├── WebChatApplication.java
 ├── auth/     config, controller, dto, filter, jwt, service
 ├── user/     config, controller, dto, entity, repository, service
-├── chat/     (Fases 4-6)
+├── chat/     controller, dto, entity, repository, service  (conversas; mensagens e WebSocket nas fases 5-6)
 └── shared/
     ├── config/        PasswordEncoder (BCrypt)
     ├── controller/    health check
