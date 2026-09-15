@@ -11,14 +11,17 @@ Componentes de infraestrutura usados por todos os módulos. Deve conter apenas o
 
 ```text
 shared/
-├── config/       vazio nesta fase
+├── config/
+│   └── PasswordEncoderConfig
 ├── controller/
 │   └── HealthController
 └── exception/
     ├── ApiError
     ├── ConflictException
+    ├── ForbiddenException
     ├── GlobalExceptionHandler
-    └── NotFoundException
+    ├── NotFoundException
+    └── UnauthorizedException
 ```
 
 ## Health check
@@ -65,6 +68,8 @@ Toda resposta de erro da API usa a mesma estrutura, definida em `ApiError`:
 | Situação | Exceção | Status |
 | -------- | ------- | ------ |
 | Entrada inválida | `MethodArgumentNotValidException` | 400 |
+| Credenciais inválidas | `UnauthorizedException` | 401 |
+| Operação proibida para o usuário autenticado | `ForbiddenException` | 403 |
 | Recurso inexistente | `NotFoundException` | 404 |
 | Conflito de estado | `ConflictException` | 409 |
 | Erros próprios do Spring MVC (rota inexistente, método não suportado, corpo malformado, ...) | tratadas por `ResponseEntityExceptionHandler` | status original |
@@ -100,21 +105,27 @@ rejeitado:
 
 ### Exceções de negócio
 
-Apenas duas, sem hierarquia intermediária. Os services as lançam diretamente:
+Uma por status HTTP, sem hierarquia intermediária. Os services as lançam diretamente:
 
 ```java
-throw new NotFoundException("Usuario nao encontrado");
-throw new ConflictException("E-mail ja cadastrado");
+throw new UnauthorizedException("E-mail ou senha invalidos");       // 401
+throw new ForbiddenException("Nao e permitido alterar o proprio papel"); // 403
+throw new NotFoundException("Usuario nao encontrado");              // 404
+throw new ConflictException("E-mail ja cadastrado");                // 409
 ```
+
+`ForbiddenException` é para regras de negócio avaliadas no service (ex.: alterar o próprio
+papel, ou acessar uma conversa da qual não participa). Papel insuficiente para uma rota é
+barrado antes, pelo Spring Security, e também devolve 403 no mesmo formato — ver
+[auth](auth.md#erros).
 
 Novas exceções só devem ser criadas quando representarem um status HTTP que ainda
 não é coberto.
 
 ## `config/`
 
-Vazio nesta fase — nenhuma configuração compartilhada é necessária ainda. Destino
-previsto: `SecurityConfig` (fase 3) e a configuração de WebSocket (fase 6), caso não
-fiquem dentro dos respectivos módulos.
+Contém apenas o `PasswordEncoderConfig` (BCrypt), usado pelos módulos USER e AUTH. O
+`SecurityConfig` ficou no módulo AUTH, e a configuração de WebSocket ficará no módulo CHAT.
 
 ## Configuração da aplicação
 
@@ -130,15 +141,18 @@ desenvolvimento local:
 | `DB_USER` | `webchat` |
 | `DB_PASSWORD` | `webchat` |
 | `SERVER_PORT` | `8080` |
-
-`JWT_SECRET` será acrescentada na fase 3, sem valor padrão.
+| `JWT_SECRET` | sem padrão — obrigatória |
+| `JWT_EXPIRATION` | `3600` |
+| `ADMIN_EMAIL` | vazio — nenhum admin inicial |
+| `ADMIN_PASSWORD` | vazio |
+| `ADMIN_NAME` | `Administrador` |
 
 ### Perfis
 
 | Perfil | Arquivo | Uso |
 | ------ | ------- | --- |
 | (nenhum) | `application.yml` | Execução local contra o PostgreSQL do Docker |
-| `dev` | `application-dev.yml` | Acrescenta log de SQL e de web |
+| `dev` | `application-dev.yml` | Log de SQL e de web; `JWT_SECRET` e administrador descartáveis |
 | `test` | `src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
 
 O perfil `test` existe para que `mvnw test` rode sem exigir Docker. A contrapartida é

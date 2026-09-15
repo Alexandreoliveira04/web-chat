@@ -2,6 +2,7 @@ package br.edu.webchat.auth.config;
 
 import br.edu.webchat.auth.filter.JwtAuthenticationFilter;
 import br.edu.webchat.auth.jwt.JwtService;
+import br.edu.webchat.user.entity.Role;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -38,9 +39,11 @@ public class SecurityConfig {
 						.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
-						.requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
-						.requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll()
+						.requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/register").permitAll()
 						.requestMatchers("/", "/*.html", "/css/**", "/js/**", "/img/**").permitAll()
+						.requestMatchers(HttpMethod.PUT, "/api/v1/users/me").authenticated()
+						.requestMatchers(HttpMethod.PUT, "/api/v1/users/{id}").hasRole(Role.ADMIN.name())
+						.requestMatchers(HttpMethod.PATCH, "/api/v1/users/{id}/role").hasRole(Role.ADMIN.name())
 						.requestMatchers("/api/v1/users/**").authenticated()
 						.requestMatchers("/api/v1/chats/**", "/api/v1/messages/**").authenticated()
 						.anyRequest().authenticated())

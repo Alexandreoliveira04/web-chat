@@ -1,5 +1,6 @@
 package br.edu.webchat.user.repository;
 
+import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.entity.UserStatus;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ class UserRepositoryTest {
 
 		assertThat(saved.getId()).isNotNull().isPositive();
 		assertThat(saved.getStatus()).isEqualTo(UserStatus.OFFLINE);
+		assertThat(saved.getRole()).isEqualTo(Role.USER);
 		assertThat(saved.getCreatedAt()).isNotNull();
 		assertThat(saved.getUpdatedAt()).isNotNull();
 	}

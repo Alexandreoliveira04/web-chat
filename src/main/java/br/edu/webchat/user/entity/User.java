@@ -34,6 +34,10 @@ public class User {
 	@Column(nullable = false, length = 20)
 	private UserStatus status;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private Role role;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -43,9 +47,14 @@ public class User {
 	protected User() {}
 
 	public User(String name, String email, String password) {
+		this(name, email, password, Role.USER);
+	}
+
+	public User(String name, String email, String password, Role role) {
 		this.name = name;
 		this.email = email;
 		this.password = password;
+		this.role = role;
 		this.status = UserStatus.OFFLINE;
 	}
 
@@ -83,6 +92,14 @@ public class User {
 
 	public UserStatus getStatus() {
 		return status;
+	}
+
+	public Role getRole() {
+		return role;
+	}
+
+	public void setRole(Role role) {
+		this.role = role;
 	}
 
 	public Instant getCreatedAt() {

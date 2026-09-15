@@ -1,5 +1,6 @@
 package br.edu.webchat.user.dto;
 
+import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.entity.UserStatus;
 
@@ -10,6 +11,7 @@ public record UserResponse(
 		String name,
 		String email,
 		UserStatus status,
+		Role role,
 		Instant createdAt,
 		Instant updatedAt
 ) {
@@ -20,6 +22,7 @@ public record UserResponse(
 				user.getName(),
 				user.getEmail(),
 				user.getStatus(),
+				user.getRole(),
 				user.getCreatedAt(),
 				user.getUpdatedAt());
 	}

@@ -1,25 +1,27 @@
 # Módulo `user`
 
 **Pacote:** `br.edu.webchat.user`
-**Fase:** 2
+**Fase:** 2 (+ 3.1 — papéis)
 **Situação:** implementado
 
-Responsável pelos colaboradores: cadastro, listagem, consulta e atualização.
+Responsável pelos colaboradores: cadastro, listagem, consulta, atualização e papel.
 
 ## Estrutura
 
 ```text
 user/
+├── config/       AdminInitializer
 ├── controller/   UserController
-├── dto/          CreateUserRequest, UpdateUserRequest, UserResponse
-├── entity/       User, UserStatus
+├── dto/          CreateUserRequest, UpdateUserRequest, UpdateRoleRequest, UserResponse
+├── entity/       User, UserStatus, Role
 ├── repository/   UserRepository
 └── service/      UserService
 ```
 
 ## Modelo de dados
 
-Tabela `users`, criada por `V2__create_users.sql`:
+Tabela `users`, criada por `V2__create_users.sql` e alterada por
+`V3__add_role_to_users.sql`:
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
@@ -28,27 +30,35 @@ Tabela `users`, criada por `V2__create_users.sql`:
 | `email` | `VARCHAR(255)` | obrigatório, **único** (`uk_users_email`) |
 | `password` | `VARCHAR(100)` | somente hash BCrypt |
 | `status` | `VARCHAR(20)` | `ONLINE` ou `OFFLINE` |
+| `role` | `VARCHAR(20)` | `USER` ou `ADMIN`, `DEFAULT 'USER'` |
 | `created_at` | `TIMESTAMPTZ` | preenchido no `@PrePersist` |
 | `updated_at` | `TIMESTAMPTZ` | atualizado no `@PreUpdate` |
 
-O enum `UserStatus` é persistido como texto (`@Enumerated(EnumType.STRING)`), não
-como ordinal — assim a ordem dos valores no enum pode mudar sem corromper os dados.
+Os enums `UserStatus` e `Role` são persistidos como texto (`@Enumerated(EnumType.STRING)`),
+não como ordinal — assim a ordem dos valores no enum pode mudar sem corromper os dados.
+
+O `DEFAULT 'USER'` da migration preenche os usuários que já existiam antes da coluna e
+garante que nenhum registro nasça administrador.
 
 ## API
 
-| Método | Rota | Sucesso | Erros |
-| ------ | ---- | ------- | ----- |
-| `POST` | `/api/v1/users` | `201` + `Location` | `400` inválido, `409` e-mail duplicado |
-| `GET` | `/api/v1/users` | `200` | — |
-| `GET` | `/api/v1/users/{id}` | `200` | `404` |
-| `PUT` | `/api/v1/users/{id}` | `200` | `400` inválido, `404` |
+| Método | Rota | Acesso | Sucesso | Erros |
+| ------ | ---- | ------ | ------- | ----- |
+| `GET` | `/api/v1/users` | autenticado | `200` | — |
+| `GET` | `/api/v1/users/me` | autenticado | `200` | — |
+| `PUT` | `/api/v1/users/me` | autenticado | `200` | `400` inválido |
+| `GET` | `/api/v1/users/{id}` | autenticado | `200` | `404` |
+| `PUT` | `/api/v1/users/{id}` | ADMIN | `200` | `400`, `403`, `404` |
+| `PATCH` | `/api/v1/users/{id}/role` | ADMIN | `200` | `400`, `403`, `404` |
 
-Ainda **sem autenticação** — os endpoints são públicos até a etapa de AUTH.
+O cadastro é feito em `POST /api/v1/auth/register` (ver [auth](auth.md#registro)), mas
+a regra continua no `UserService.create`. As regras de acesso por papel estão em
+[auth](auth.md#autorização-por-papéis).
 
-### Criar
+### Criar (via `/auth/register`)
 
 ```http
-POST /api/v1/users
+POST /api/v1/auth/register
 Content-Type: application/json
 
 {
@@ -64,23 +74,55 @@ Content-Type: application/json
   "name": "Alexandre Oliveira",
   "email": "alexandre@email.com",
   "status": "OFFLINE",
+  "role": "USER",
   "createdAt": "2026-09-09T02:33:52.097170900Z",
   "updatedAt": "2026-09-09T02:33:52.097170900Z"
 }
 ```
 
-### Atualizar
+### Atualizar o próprio perfil
 
 ```http
-PUT /api/v1/users/1
+PUT /api/v1/users/me
+Authorization: Bearer <token>
 Content-Type: application/json
 
 { "name": "Alexandre Oliveira Silva" }
 ```
 
+O usuário é identificado pelo token, nunca por um id na URL ou no corpo, então não há
+como atualizar outra pessoa por esta rota.
+
 `UpdateUserRequest` só tem o campo `name`. Campos extras no JSON são simplesmente
-ignorados pela desserialização — não há como alterar `id`, `email`, `status` ou
+ignorados pela desserialização — não há como alterar `id`, `email`, `status`, `role` ou
 `password` por este endpoint.
+
+### Atualizar qualquer colaborador (ADMIN)
+
+```http
+PUT /api/v1/users/1
+Authorization: Bearer <token de ADMIN>
+Content-Type: application/json
+
+{ "name": "Alexandre Oliveira Silva" }
+```
+
+Mesmo corpo e mesmas validações do `/me`. Um `USER` recebe `403`, inclusive para o
+próprio id — ele deve usar `/me`.
+
+### Alterar papel (ADMIN)
+
+```http
+PATCH /api/v1/users/2/role
+Authorization: Bearer <token de ADMIN>
+Content-Type: application/json
+
+{ "role": "ADMIN" }
+```
+
+- `role` é obrigatório e aceita apenas `USER` ou `ADMIN` (outro valor → `400`);
+- alterar o **próprio** papel → `403` (`Nao e permitido alterar o proprio papel`);
+- a mudança vale na próxima requisição do usuário afetado, mesmo com o token antigo.
 
 ## Validações
 
@@ -89,6 +131,7 @@ ignorados pela desserialização — não há como alterar `id`, `email`, `statu
 | `name` | `@NotBlank`, 2–100 caracteres |
 | `email` | `@NotBlank`, `@Email`, até 255 caracteres |
 | `password` | `@NotBlank`, 6–100 caracteres |
+| `role` | `@NotNull`, `USER` ou `ADMIN` |
 
 Erros são traduzidos pelo tratamento global — ver
 [shared](shared.md#erros-de-validação).
@@ -101,18 +144,18 @@ Erros são traduzidos pelo tratamento global — ver
   `uk_users_email` no banco como garantia final.
 - **Usuário inexistente**: `NotFoundException` → `404`.
 - **Status inicial**: todo usuário nasce `OFFLINE`. Não há como defini-lo pela API.
+- **Papel inicial**: todo cadastro nasce `USER`. Só um ADMIN altera papéis, e nunca o
+  próprio.
+- **Administrador inicial**: `UserService.ensureAdmin` cria ou promove o e-mail de
+  `ADMIN_EMAIL` na inicialização (chamado pelo `AdminInitializer`). Detalhes em
+  [auth](auth.md#administrador-inicial).
 - **Senha**: codificada com BCrypt no service, antes de persistir. Nunca aparece em
   `UserResponse`.
 
 ## Senha e BCrypt
 
-O `PasswordEncoder` é fornecido por
-`br.edu.webchat.shared.config.PasswordEncoderConfig`, que depende apenas de
-`spring-security-crypto`.
-
-O starter completo do Spring Security **não** foi adicionado de propósito: ele
-auto-configura proteção em todos os endpoints, o que ainda não é desejado. Ele entra
-na etapa de AUTH, junto com o `SecurityFilterChain`.
+O `PasswordEncoder` (BCrypt) é fornecido por
+`br.edu.webchat.shared.config.PasswordEncoderConfig`.
 
 ## Decisões de implementação
 
@@ -133,15 +176,13 @@ colaboradores esperado; se a listagem crescer, `Pageable` é acréscimo direto.
 
 | Classe | Tipo | Cobre |
 | ------ | ---- | ----- |
-| `UserServiceTest` | unitário (Mockito) | regras de negócio, hash, normalização, 404/409 |
+| `UserServiceTest` | unitário (Mockito) | regras de negócio, hash, normalização, 404/409, `/me`, troca de papel, 403 no próprio papel, `ensureAdmin` |
 | `UserServiceIntegrationTest` | integração (H2) | ID gerado, hash persistido, `updatedAt` |
-| `UserRepositoryTest` | `@DataJpaTest` (H2) | identity, `findByEmail`, constraint única |
-| `UserControllerTest` | `@WebMvcTest` | status HTTP, `Location`, ausência de senha |
+| `UserRepositoryTest` | `@DataJpaTest` (H2) | identity, papel padrão `USER`, `findByEmail`, constraint única |
+| `UserControllerTest` | `@WebMvcTest` | status HTTP, `/me`, `PATCH role`, ausência de senha |
 
 ## Pendências
 
-- `GET /users/me` e `PUT /users/me` (spec §12) dependem de usuário autenticado —
-  ficam para a etapa de AUTH.
 - O `status` nunca muda de `OFFLINE`: a presença real será controlada pelos eventos
   de conexão do WebSocket (fase 6).
 - Não há remoção de usuário — não está no escopo do MVP.

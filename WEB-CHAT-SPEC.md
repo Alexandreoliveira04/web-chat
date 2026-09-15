@@ -49,7 +49,8 @@ O sistema deverá permitir:
 - login;
 - autenticação utilizando JWT;
 - acesso somente a recursos autenticados;
-- identificação do usuário autenticado.
+- identificação do usuário autenticado;
+- autorização por papéis (`USER` e `ADMIN`).
 
 ### 3.2 Usuários
 
@@ -59,7 +60,9 @@ O sistema deverá permitir:
 - consultar um colaborador;
 - consultar o próprio perfil;
 - atualizar dados básicos do próprio perfil;
-- representar o status do usuário como online/offline.
+- representar o status do usuário como online/offline;
+- administradores atualizarem dados básicos de qualquer colaborador;
+- administradores alterarem o papel de outros colaboradores.
 
 ### 3.3 Conversas
 
@@ -243,7 +246,7 @@ Entidades JPA não devem ser expostas diretamente nas respostas da API.
 
 ### 8.1 AUTH
 
-Responsável pela autenticação.
+Responsável pela autenticação e pela autorização.
 
 Responsabilidades:
 
@@ -251,15 +254,18 @@ Responsabilidades:
 - login;
 - geração de JWT;
 - validação do JWT;
-- integração com Spring Security.
+- integração com Spring Security;
+- regras de acesso por papel.
 
 Estrutura:
 
 ```text
 auth/
+├── config/       SecurityConfig, SecurityErrorHandler
 ├── controller/
 ├── dto/
-├── security/
+├── filter/       JwtAuthenticationFilter
+├── jwt/          JwtService
 └── service/
 ```
 
@@ -273,6 +279,7 @@ Estrutura:
 
 ```text
 user/
+├── config/       AdminInitializer (administrador inicial)
 ├── controller/
 ├── dto/
 ├── entity/
@@ -286,7 +293,8 @@ Responsabilidades:
 - consulta;
 - atualização;
 - perfil;
-- status.
+- status;
+- papel (`USER` / `ADMIN`).
 
 ---
 
@@ -382,6 +390,7 @@ name
 email
 password
 status
+role
 created_at
 updated_at
 ```
@@ -391,7 +400,8 @@ Regras:
 - `id` deve ser gerado automaticamente;
 - `email` deve ser único;
 - `password` deve ser armazenada somente com hash;
-- `status` representa o estado atual do usuário.
+- `status` representa o estado atual do usuário;
+- `role` é o papel do usuário (`USER` ou `ADMIN`), com padrão `USER`.
 
 ### chats
 
@@ -473,10 +483,12 @@ POST /api/v1/auth/login
 ### Users
 
 ```http
-GET /api/v1/users
-GET /api/v1/users/{id}
-GET /api/v1/users/me
-PUT /api/v1/users/me
+GET   /api/v1/users
+GET   /api/v1/users/{id}
+GET   /api/v1/users/me
+PUT   /api/v1/users/me
+PUT   /api/v1/users/{id}          (ADMIN)
+PATCH /api/v1/users/{id}/role     (ADMIN)
 ```
 
 ### Chats
@@ -546,6 +558,29 @@ Authorization: Bearer <token>
 
 Senhas nunca devem ser armazenadas em texto puro.
 
+### 14.1 Autorização por papéis
+
+Decisão tomada no Módulo 0, para corrigir a falha em que qualquer usuário autenticado
+podia alterar os dados de outro colaborador.
+
+Papéis:
+
+| Papel | Permissões |
+| ----- | ---------- |
+| `USER` | ler colaboradores, ler e atualizar o **próprio** perfil (`/users/me`), usar o chat |
+| `ADMIN` | tudo de `USER`, mais atualizar qualquer colaborador e alterar papéis |
+
+Regras:
+
+- cada usuário possui **um único papel**, armazenado na coluna `users.role`;
+- o cadastro público (`POST /auth/register`) cria sempre `USER`; o papel nunca vem do corpo da requisição;
+- as regras de acesso por rota ficam no `SecurityConfig` (`hasRole("ADMIN")`); violação resulta em **403**;
+- o papel **não** é gravado no JWT: ele é lido do banco a cada requisição, então uma mudança de papel vale imediatamente;
+- nenhum usuário pode alterar o próprio papel (403), o que impede que o sistema fique sem administrador;
+- o administrador inicial é criado (ou promovido) na inicialização a partir de `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `ADMIN_NAME`; sem `ADMIN_EMAIL`, nada é criado.
+
+Administradores **não** ganham acesso a conversas de terceiros: a regra de participante do chat vale para todos os papéis.
+
 ---
 
 ## 15. Validação
@@ -598,6 +633,9 @@ DB_NAME
 DB_USER
 DB_PASSWORD
 JWT_SECRET
+ADMIN_NAME
+ADMIN_EMAIL
+ADMIN_PASSWORD
 ```
 
 O arquivo `application.yml` deverá utilizar variáveis de ambiente quando apropriado.
@@ -645,15 +683,19 @@ O projeto deverá utilizar uma ferramenta de migrations, preferencialmente Flywa
 
 As migrations devem ser versionadas no Git.
 
-Exemplo:
+Migrations atuais e previstas:
 
 ```text
 src/main/resources/db/migration/
-├── V1__create_users.sql
-├── V2__create_chats.sql
-├── V3__create_chat_participants.sql
-└── V4__create_messages.sql
+├── V1__init.sql                          (aplicada)
+├── V2__create_users.sql                  (aplicada)
+├── V3__add_role_to_users.sql             (aplicada)
+├── V4__create_chats.sql                  (prevista)
+├── V5__create_chat_participants.sql      (prevista)
+└── V6__create_messages.sql               (prevista)
 ```
+
+Migrations já aplicadas nunca devem ser editadas; qualquer mudança de schema entra em uma nova versão.
 
 O Hibernate não deverá ser utilizado como mecanismo principal de versionamento do schema em produção.
 
@@ -785,7 +827,7 @@ Exemplo:
 
 ```json
 {
-  "id": "uuid",
+  "id": 1,
   "createdAt": "2026-09-08T22:00:00Z"
 }
 ```
@@ -796,34 +838,45 @@ Exemplo:
 
 ### Fase 1 — Fundação
 
-- [ ] revisar projeto Maven existente;
-- [ ] configurar Java 17;
-- [ ] configurar Spring Boot;
-- [ ] configurar PostgreSQL;
-- [ ] configurar Docker Compose;
-- [ ] configurar Flyway;
-- [ ] organizar pacotes.
+- [x] revisar projeto Maven existente;
+- [x] configurar Java 17;
+- [x] configurar Spring Boot;
+- [x] configurar PostgreSQL;
+- [x] configurar Docker Compose;
+- [x] configurar Flyway;
+- [x] organizar pacotes.
 
 ### Fase 2 — USER
 
-- [ ] entidade User;
-- [ ] migration;
-- [ ] repository;
-- [ ] service;
-- [ ] DTOs;
-- [ ] controller;
-- [ ] validações;
-- [ ] testes.
+- [x] entidade User;
+- [x] migration;
+- [x] repository;
+- [x] service;
+- [x] DTOs;
+- [x] controller;
+- [x] validações;
+- [x] testes.
 
 ### Fase 3 — AUTH
 
-- [ ] registro;
-- [ ] BCrypt;
-- [ ] login;
-- [ ] JWT;
-- [ ] Spring Security;
-- [ ] proteção dos endpoints;
-- [ ] testes.
+- [x] registro;
+- [x] BCrypt;
+- [x] login;
+- [x] JWT;
+- [x] Spring Security;
+- [x] proteção dos endpoints;
+- [x] testes.
+
+### Fase 3.1 — PAPÉIS E PERMISSÕES (Módulo 0)
+
+- [x] papel `USER` / `ADMIN` na entidade User;
+- [x] migration `V3__add_role_to_users.sql`;
+- [x] `POST /auth/register` substitui `POST /users`;
+- [x] `PUT /users/me` para o próprio perfil;
+- [x] `PUT /users/{id}` e `PATCH /users/{id}/role` restritos a ADMIN;
+- [x] `ForbiddenException` (403);
+- [x] administrador inicial via variáveis de ambiente;
+- [x] testes.
 
 ### Fase 4 — CHAT
 
@@ -880,15 +933,15 @@ Exemplo:
 
 O MVP será considerado concluído quando:
 
-- [ ] um usuário puder ser cadastrado;
-- [ ] um usuário puder realizar login;
-- [ ] endpoints protegidos exigirem autenticação;
+- [x] um usuário puder ser cadastrado;
+- [x] um usuário puder realizar login;
+- [x] endpoints protegidos exigirem autenticação;
 - [ ] dois usuários puderem iniciar uma conversa;
 - [ ] mensagens forem persistidas no PostgreSQL;
 - [ ] o histórico puder ser consultado;
 - [ ] mensagens puderem ser recebidas em tempo real;
-- [ ] o backend puder ser executado localmente;
-- [ ] o PostgreSQL puder ser iniciado via Docker Compose;
+- [x] o backend puder ser executado localmente;
+- [x] o PostgreSQL puder ser iniciado via Docker Compose;
 - [ ] testes básicos estiverem funcionando.
 
 ---
@@ -910,7 +963,12 @@ O MVP será considerado concluído quando:
 
 ## 28. Estado atual
 
-Esta especificação representa a versão inicial do projeto.
+Fases 1, 2 e 3 concluídas, incluindo autorização por papéis (Fase 3.1 / Módulo 0).
+Próxima etapa: Fase 4 — CHAT.
+
+O frontend atual é um conjunto de páginas estáticas (HTML/CSS/JS) servidas pelo próprio
+Spring Boot em `src/main/resources/static`, usado para demonstrar a API. O frontend
+Next.js da Fase 7 continua planejado.
 
 Alterações arquiteturais ou funcionais relevantes devem ser registradas nesta especificação antes de serem implementadas.
 

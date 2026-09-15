@@ -61,8 +61,8 @@ Restrições:
 | `created_at` | timestamptz | preenchido automaticamente |
 | `read_at` | timestamptz | nulo enquanto não lida |
 
-Migrations: `V3__create_chats.sql`, `V4__create_chat_participants.sql`,
-`V5__create_messages.sql` (a última migration aplicada é a `V2__create_users.sql`).
+Migrations: `V4__create_chats.sql`, `V5__create_chat_participants.sql`,
+`V6__create_messages.sql` (a última migration aplicada é a `V3__add_role_to_users.sql`).
 
 ## Relacionamentos
 
@@ -101,7 +101,8 @@ WebSocket passam por ele, para que não existam dois caminhos de escrita diverge
 - se já existir conversa entre os dois usuários, ela é reaproveitada em vez de
   duplicada (comportamento a confirmar na fase 4: reaproveitar ou retornar 409);
 - só participantes da conversa podem lê-la ou enviar mensagens nela — caso contrário
-  **403**;
+  `ForbiddenException` (**403**). Isso vale também para `ADMIN`: o papel não dá acesso
+  a conversas de terceiros (ver [auth](auth.md#autorização-por-papéis));
 - `chatId` inexistente resulta em `NotFoundException` (404);
 - o remetente de uma mensagem é sempre o usuário autenticado, nunca um id vindo do
   corpo da requisição;
