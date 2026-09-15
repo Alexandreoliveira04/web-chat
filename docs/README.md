@@ -13,7 +13,7 @@ implementação; em caso de divergência, a spec prevalece.
 | [shared](shared.md) | Configuração, tratamento de erros, health check | 1 | Implementado |
 | [user](user.md) | Colaboradores: cadastro, consulta, perfil, status, papel | 2, 3.1 | Implementado |
 | [auth](auth.md) | Registro, login, JWT, Spring Security, autorização por papéis | 3, 3.1 | Implementado |
-| [chat](chat.md) | Conversas, mensagens, histórico, WebSocket | 4–6 | Não iniciado |
+| [chat](chat.md) | Conversas, mensagens, histórico, WebSocket | 4–6 | Conversas implementadas (fase 4); mensagens e WebSocket pendentes |
 
 ## Convenções comuns
 

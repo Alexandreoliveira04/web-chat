@@ -306,12 +306,12 @@ Estrutura:
 
 ```text
 chat/
-├── controller/
+├── controller/   ChatController
 ├── dto/
-├── entity/
-├── repository/
-├── service/
-└── websocket/
+├── entity/       Chat
+├── repository/   ChatRepository
+├── service/      ChatService
+└── websocket/    (fase 6)
 ```
 
 Responsabilidades:
@@ -407,9 +407,15 @@ Regras:
 
 ```text
 id
+direct_key
 created_at
 updated_at
 ```
+
+Regras:
+
+- `direct_key` identifica o par de usuários da conversa individual, com o menor id primeiro (ex.: `3:4`);
+- `direct_key` é único: existe no máximo uma conversa por par de usuários, garantido pelo banco.
 
 ### chat_participants
 
@@ -421,7 +427,11 @@ user_id
 Regras:
 
 - um chat individual possui exatamente dois participantes;
-- um usuário não pode participar duas vezes da mesma conversa.
+- um usuário não pode participar duas vezes da mesma conversa (chave primária composta `(chat_id, user_id)`);
+- entre o mesmo par de usuários existe uma única conversa (`chats.direct_key` único): uma nova tentativa, inclusive simultânea, reaproveita a existente.
+
+Decisão da Fase 4: `chat_participants` é mapeada como tabela de junção (`@ManyToMany` em
+`Chat`), sem entidade `ChatParticipant`, porque não possui colunas próprias.
 
 ### messages
 
@@ -458,8 +468,7 @@ User
 
 Relacionamentos principais:
 
-- User 1:N ChatParticipant
-- Chat 1:N ChatParticipant
+- User N:N Chat, através de `chat_participants` (no JPA: `Chat.participants`, `@ManyToMany`)
 - Chat 1:N Message
 - User 1:N Message
 
@@ -494,12 +503,17 @@ PATCH /api/v1/users/{id}/role     (ADMIN)
 ### Chats
 
 ```http
-GET /api/v1/chats
-POST /api/v1/chats
-GET /api/v1/chats/{chatId}
-GET /api/v1/chats/{chatId}/messages
-POST /api/v1/chats/{chatId}/messages
+GET  /api/v1/chats                        (implementado)
+POST /api/v1/chats                        (implementado)
+GET  /api/v1/chats/{chatId}               (implementado)
+GET  /api/v1/chats/{chatId}/messages      (fase 5)
+POST /api/v1/chats/{chatId}/messages      (fase 5)
 ```
+
+`POST /api/v1/chats` recebe `{ "participantId": <id> }` e responde `201` com `Location`
+quando cria a conversa, ou `200` com a conversa já existente entre os dois usuários.
+Consultar uma conversa da qual o usuário não participa resulta em `403`, inclusive para
+`ADMIN`.
 
 Os endpoints poderão evoluir conforme a implementação.
 
@@ -690,9 +704,10 @@ src/main/resources/db/migration/
 ├── V1__init.sql                          (aplicada)
 ├── V2__create_users.sql                  (aplicada)
 ├── V3__add_role_to_users.sql             (aplicada)
-├── V4__create_chats.sql                  (prevista)
-├── V5__create_chat_participants.sql      (prevista)
-└── V6__create_messages.sql               (prevista)
+├── V4__create_chats.sql                  (aplicada)
+├── V5__create_chat_participants.sql      (aplicada)
+├── V6__add_direct_key_to_chats.sql       (aplicada)
+└── V7__create_messages.sql               (prevista)
 ```
 
 Migrations já aplicadas nunca devem ser editadas; qualquer mudança de schema entra em uma nova versão.
@@ -880,14 +895,16 @@ Exemplo:
 
 ### Fase 4 — CHAT
 
-- [ ] entidade Chat;
-- [ ] participantes;
-- [ ] migrations;
-- [ ] repositories;
-- [ ] services;
-- [ ] controllers;
-- [ ] criação de conversas;
-- [ ] listagem de conversas.
+- [x] entidade Chat;
+- [x] participantes;
+- [x] migrations;
+- [x] repositories;
+- [x] services;
+- [x] controllers;
+- [x] criação de conversas;
+- [x] listagem de conversas;
+- [x] unicidade da conversa por par (`direct_key`);
+- [x] testes.
 
 ### Fase 5 — MESSAGE
 
@@ -936,7 +953,7 @@ O MVP será considerado concluído quando:
 - [x] um usuário puder ser cadastrado;
 - [x] um usuário puder realizar login;
 - [x] endpoints protegidos exigirem autenticação;
-- [ ] dois usuários puderem iniciar uma conversa;
+- [x] dois usuários puderem iniciar uma conversa;
 - [ ] mensagens forem persistidas no PostgreSQL;
 - [ ] o histórico puder ser consultado;
 - [ ] mensagens puderem ser recebidas em tempo real;
@@ -963,8 +980,8 @@ O MVP será considerado concluído quando:
 
 ## 28. Estado atual
 
-Fases 1, 2 e 3 concluídas, incluindo autorização por papéis (Fase 3.1 / Módulo 0).
-Próxima etapa: Fase 4 — CHAT.
+Fases 1, 2, 3 (incluindo autorização por papéis, Fase 3.1 / Módulo 0) e 4 (conversas,
+Módulo 1) concluídas. Próxima etapa: Fase 5 — MESSAGE.
 
 O frontend atual é um conjunto de páginas estáticas (HTML/CSS/JS) servidas pelo próprio
 Spring Boot em `src/main/resources/static`, usado para demonstrar a API. O frontend
