@@ -228,6 +228,18 @@ export default function ChatPage() {
     return () => document.removeEventListener("visibilitychange", aoVoltar);
   }, [chats, marcarComoLida]);
 
+  useEffect(() => {
+    function onEscKeyDown(e: KeyboardEvent) {
+      // Ignorar se houver modais abertos, ou se o foco estiver num input (opcional)
+      if (e.key === "Escape" && !mostrarParticipantes && !mostrarNovoGrupo) {
+        setActiveChatId(null);
+        setMessages([]);
+      }
+    }
+    window.addEventListener("keydown", onEscKeyDown);
+    return () => window.removeEventListener("keydown", onEscKeyDown);
+  }, [mostrarParticipantes, mostrarNovoGrupo]);
+
   async function iniciarConversaDireta(user: User) {
     try {
       const chat = await chatsApi.openDirect(user.id);
@@ -284,8 +296,75 @@ export default function ChatPage() {
   }
 
   if (!me) {
-    return <main className="flex h-full items-center justify-center text-slate-400">Carregando...</main>;
+    return (
+      <main className="flex h-full bg-slate-950">
+        <div className="w-[320px] flex-shrink-0 border-r border-slate-800 bg-slate-950 flex flex-col">
+          <div className="h-20 border-b border-slate-800 p-4 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-full bg-slate-800 animate-pulse"></div>
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-32 bg-slate-800 rounded animate-pulse"></div>
+              <div className="h-3 w-16 bg-slate-800 rounded animate-pulse"></div>
+            </div>
+          </div>
+          <div className="flex-1 p-4 space-y-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="flex items-center gap-4">
+                <div className="h-12 w-12 rounded-full bg-slate-800 animate-pulse"></div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-3/4 bg-slate-800 rounded animate-pulse"></div>
+                  <div className="h-3 w-1/2 bg-slate-800 rounded animate-pulse"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col bg-slate-950">
+           <div className="h-20 border-b border-slate-800 p-4 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-slate-800 animate-pulse"></div>
+              <div className="h-4 w-48 bg-slate-800 rounded animate-pulse"></div>
+           </div>
+           <div className="flex-1 p-8 space-y-8">
+              <div className="flex gap-4">
+                 <div className="h-24 w-72 bg-slate-800 rounded-2xl rounded-tl-none animate-pulse"></div>
+              </div>
+              <div className="flex justify-end gap-4">
+                 <div className="h-16 w-64 bg-slate-800 rounded-2xl rounded-tr-none animate-pulse"></div>
+              </div>
+              <div className="flex gap-4">
+                 <div className="h-32 w-96 bg-slate-800 rounded-2xl rounded-tl-none animate-pulse"></div>
+              </div>
+           </div>
+           <div className="h-20 border-t border-slate-800 p-4 flex items-center">
+              <div className="h-12 w-full bg-slate-800 rounded-lg animate-pulse"></div>
+           </div>
+        </div>
+      </main>
+    );
   }
+
+  const bgStars = encodeURIComponent(`
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <g fill="#ffffff" fill-opacity="0.15" font-family="monospace" font-weight="bold">
+    <text x="25" y="35" font-size="14">*</text>
+    <text x="150" y="50" font-size="10">.</text>
+    <text x="260" y="80" font-size="12">+</text>
+    <text x="85" y="130" font-size="14">;</text>
+    <text x="200" y="160" font-size="12">:</text>
+    <text x="45" y="190" font-size="10">.</text>
+    <text x="125" y="90" font-size="16">*</text>
+    <text x="280" y="190" font-size="12">~</text>
+    <text x="230" y="250" font-size="14">;</text>
+    <text x="75" y="275" font-size="12">+</text>
+    <text x="160" y="280" font-size="10">.</text>
+    <text x="285" y="40" font-size="14">*</text>
+    <text x="25" y="230" font-size="12">:</text>
+    
+    <text x="110" y="210" font-size="14" fill-opacity="0.08">{ }</text>
+    <text x="210" y="110" font-size="12" fill-opacity="0.08">&lt;/&gt;</text>
+    <text x="50" y="100" font-size="10" fill-opacity="0.08">()</text>
+    <text x="250" y="280" font-size="12" fill-opacity="0.08">[]</text>
+  </g>
+</svg>`.trim());
 
   return (
     <main className="flex h-full">
@@ -303,6 +382,10 @@ export default function ChatPage() {
           authApi.logout();
           router.replace("/login");
         }}
+        onUpdateMe={async (name) => {
+          const updated = await usersApi.update(name);
+          setMe(updated);
+        }}
       />
 
       {activeChat ? (
@@ -319,8 +402,28 @@ export default function ChatPage() {
           onOpenSettings={() => setMostrarParticipantes(true)}
         />
       ) : (
-        <section className="flex flex-1 items-center justify-center text-slate-500">
-          Selecione uma conversa para começar
+        <section 
+          className="flex flex-1 flex-col items-center justify-center border-l border-slate-800 bg-slate-950 text-center"
+          style={{ backgroundImage: `url("data:image/svg+xml,${bgStars}")`, backgroundSize: '300px 300px' }}
+        >
+          <div className="mb-4 flex items-center justify-center">
+            <div className="relative h-64 w-64 rounded-full overflow-hidden border-4 border-slate-800 shadow-[0_0_30px_rgba(16,185,129,0.2)] animate-bounce-slow" style={{ animationDuration: '3s' }}>
+              <img 
+                src="/mascote.jpg" 
+                alt="Mascote Astronauta" 
+                className="h-full w-full object-cover scale-110"
+              />
+              <div className="absolute inset-0 rounded-full shadow-[inset_0_0_20px_rgba(0,0,0,0.8)]"></div>
+            </div>
+          </div>
+          <h1 className="text-3xl font-light text-slate-200">Web Chat Desktop</h1>
+          <p className="mt-4 max-w-md text-sm text-slate-400">
+            Envie e receba mensagens em tempo real. <br />
+            Selecione um colaborador ao lado para começar a conversar.
+          </p>
+          <div className="mt-12 flex items-center gap-2 text-xs text-slate-500">
+
+          </div>
         </section>
       )}
 

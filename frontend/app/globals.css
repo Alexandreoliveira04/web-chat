@@ -8,3 +8,10 @@ html,
 body {
   height: 100%;
 }
+
+.theme-light { 
+  filter: invert(1) hue-rotate(180deg); 
+} 
+.theme-light img, .theme-light emoji-picker, .theme-light .emoji-icon { 
+  filter: invert(1) hue-rotate(180deg); 
+}
