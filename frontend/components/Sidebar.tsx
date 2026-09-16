@@ -142,7 +142,12 @@ export default function Sidebar({
                 {chatTitle(chat, me.id)}
               </p>
               <p className="truncate text-xs text-slate-400">
-                {messagePreview(chat.lastMessage, me.id, chat.participants)}
+                {messagePreview(chat.lastMessage, me.id, chat.participants).split(/(\p{Extended_Pictographic})/gu).map((part, index) => {
+                  if (/\p{Extended_Pictographic}/u.test(part)) {
+                    return <span key={index} className="emoji-icon">{part}</span>;
+                  }
+                  return part;
+                })}
               </p>
             </div>
             {chat.unreadCount > 0 && (
