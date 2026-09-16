@@ -315,9 +315,9 @@ Estrutura:
 chat/
 ├── controller/   ChatController, MessageController
 ├── dto/
-├── entity/       Chat, Message
+├── entity/       Chat, ChatType, ChatParticipant, Message
 ├── repository/   ChatRepository, MessageRepository
-├── service/      ChatService, MessageService
+├── service/      ChatService, ChatCreator, MessageService
 └── websocket/    WebSocketConfig, StompAuthInterceptor, ChatWebSocketController, ChatEventBroadcaster, PresenceService
 ```
 
@@ -527,12 +527,17 @@ PATCH /api/v1/users/{id}/role     (ADMIN)
 ### Chats
 
 ```http
-GET   /api/v1/chats
-POST  /api/v1/chats
-GET   /api/v1/chats/{chatId}
-GET   /api/v1/chats/{chatId}/messages?before={messageId}&size={1-100}
-POST  /api/v1/chats/{chatId}/messages
-PATCH /api/v1/chats/{chatId}/messages/read
+GET    /api/v1/chats
+POST   /api/v1/chats
+POST   /api/v1/chats/groups
+GET    /api/v1/chats/{chatId}
+PATCH  /api/v1/chats/{chatId}
+POST   /api/v1/chats/{chatId}/participants
+DELETE /api/v1/chats/{chatId}/participants/{userId}
+DELETE /api/v1/chats/{chatId}/participants/me
+GET    /api/v1/chats/{chatId}/messages?before={messageId}&size={1-100}
+POST   /api/v1/chats/{chatId}/messages
+PATCH  /api/v1/chats/{chatId}/messages/read
 ```
 
 `POST /api/v1/chats` recebe `{ "participantId": <id> }` e responde `201` com `Location`
@@ -592,6 +597,7 @@ Referência completa em [docs/chat.md](docs/chat.md#websocket).
 | Mensagens recebidas | `/user/queue/messages` — `MessageResponse`, para os dois participantes |
 | Leitura | `/user/queue/read` — `{ chatId, readerId, lastReadMessageId, markedAsRead }`, para os participantes |
 | Erros do envio | `/user/queue/errors` — `ApiError`, só para quem enviou |
+| Conversas | `/user/queue/chats` — `{ event, chatId }` (`CREATED`/`UPDATED`/`REMOVED`), para os participantes afetados |
 | Presença | `/topic/presence` — `{ userId, status }`, para todos os conectados |
 
 Regras:
@@ -1032,13 +1038,13 @@ Exemplo:
 
 ### Fase 9 — GRUPOS
 
-- [ ] leitura por participante (`ChatParticipant` como entidade);
-- [ ] tipo e nome da conversa;
-- [ ] criação de grupo;
-- [ ] renomear, adicionar e remover participantes (somente o dono);
-- [ ] sair do grupo;
-- [ ] eventos de conversa no WebSocket;
-- [ ] testes.
+- [x] leitura por participante (`ChatParticipant` como entidade);
+- [x] tipo, nome e dono da conversa;
+- [x] criação de grupo;
+- [x] renomear, adicionar e remover participantes (somente o dono);
+- [x] sair do grupo, com transferência de posse e remoção do grupo vazio;
+- [x] eventos de conversa no WebSocket;
+- [x] testes.
 
 ### Fase 10 — EDITAR E APAGAR MENSAGENS
 
@@ -1101,7 +1107,9 @@ ponta do fluxo mínimo. Todos os critérios do §26 estão atendidos.
 **Ampliação de escopo em andamento** (registrada aqui antes da implementação, conforme a
 regra desta seção): grupos (Fase 9), edição e exclusão de mensagens (Fase 10) e o frontend
 Next.js (Fase 7), que substituirá as páginas estáticas. A entrega é incremental, um módulo
-por vez: leitura por participante → grupos → editar/apagar → frontend.
+por vez: leitura por participante (concluída) → grupos (concluída) → editar/apagar →
+frontend. As páginas estáticas atuais listam apenas conversas individuais; grupos aparecem
+só no frontend novo.
 
 O que permanece fora do escopo entregue, para eventual continuidade:
 

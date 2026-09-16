@@ -2,6 +2,7 @@ package br.edu.webchat.chat.dto;
 
 import br.edu.webchat.chat.entity.Chat;
 import br.edu.webchat.chat.entity.ChatParticipant;
+import br.edu.webchat.chat.entity.ChatType;
 import br.edu.webchat.chat.entity.Message;
 
 import java.time.Instant;
@@ -10,6 +11,9 @@ import java.util.List;
 
 public record ChatResponse(
 		Long id,
+		ChatType type,
+		String name,
+		Long ownerId,
 		List<ParticipantResponse> participants,
 		MessageResponse lastMessage,
 		long unreadCount,
@@ -27,6 +31,9 @@ public record ChatResponse(
 
 		return new ChatResponse(
 				chat.getId(),
+				chat.getType(),
+				chat.getName(),
+				chat.getOwnerId(),
 				participants,
 				lastMessage == null ? null : MessageResponse.from(lastMessage),
 				unreadCount,

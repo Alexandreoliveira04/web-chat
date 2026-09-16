@@ -18,6 +18,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 	public static final String PRESENCE_TOPIC = "/topic/presence";
 	public static final String MESSAGES_QUEUE = "/queue/messages";
 	public static final String READ_QUEUE = "/queue/read";
+	public static final String CHATS_QUEUE = "/queue/chats";
 	public static final String ERRORS_QUEUE = "/queue/errors";
 
 	private final StompAuthInterceptor stompAuthInterceptor;

@@ -109,12 +109,22 @@ GET  /api/v1/users
 GET  /api/v1/users/me
 PUT  /api/v1/users/me
 GET  /api/v1/users/{id}
-GET  /api/v1/chats
-POST /api/v1/chats
-GET  /api/v1/chats/{chatId}
-GET  /api/v1/chats/{chatId}/messages?before={id}&size={1-100}
-POST /api/v1/chats/{chatId}/messages
-PATCH /api/v1/chats/{chatId}/messages/read
+GET    /api/v1/chats
+POST   /api/v1/chats
+GET    /api/v1/chats/{chatId}
+GET    /api/v1/chats/{chatId}/messages?before={id}&size={1-100}
+POST   /api/v1/chats/{chatId}/messages
+PATCH  /api/v1/chats/{chatId}/messages/read
+```
+
+Grupos (o dono é quem criou):
+
+```http
+POST   /api/v1/chats/groups                              { "name", "participantIds" }
+PATCH  /api/v1/chats/{chatId}                            { "name" }            (dono)
+POST   /api/v1/chats/{chatId}/participants               { "userId" }          (dono)
+DELETE /api/v1/chats/{chatId}/participants/{userId}                            (dono)
+DELETE /api/v1/chats/{chatId}/participants/me                                  (sair)
 ```
 
 Exigem token de um usuário com papel `ADMIN`:
@@ -216,6 +226,7 @@ STOMP sobre WebSocket em `ws://localhost:8080/ws`, autenticado com o JWT no fram
 | `SUBSCRIBE` | `/user/queue/messages` | mensagens novas das suas conversas |
 | `SUBSCRIBE` | `/user/queue/read` | avisos de leitura (✓✓) |
 | `SUBSCRIBE` | `/user/queue/errors` | erros do seu último envio |
+| `SUBSCRIBE` | `/user/queue/chats` | grupos criados, renomeados ou com mudança de participantes |
 | `SUBSCRIBE` | `/topic/presence` | quem ficou online/offline |
 
 Mensagens enviadas pelo `POST` REST também são entregues em tempo real. Protocolo completo
@@ -226,6 +237,9 @@ em [docs/chat.md](docs/chat.md#websocket).
 `http://localhost:8080` usa a API e o WebSocket: abrir um contato inicia ou reaproveita a
 conversa e carrega o histórico; mensagens chegam na hora, as não lidas aparecem na barra
 lateral, os ✓✓ atualizam quando o outro lê e o anel verde no avatar indica quem está online.
+
+⚠️ Estas páginas são temporárias e mostram **apenas conversas individuais**. Grupos já
+funcionam na API e aparecerão no frontend Next.js (fase 7).
 
 Para testar a conversa, abra duas janelas (uma delas anônima, já que o token fica no
 `localStorage`) e entre com usuários diferentes.

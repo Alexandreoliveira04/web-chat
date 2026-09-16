@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -48,6 +49,9 @@ class ChatServiceTest {
 	@Mock
 	private ChatCreator chatCreator;
 
+	@Mock
+	private ApplicationEventPublisher events;
+
 	private ChatService chatService;
 
 	private final User alexandre = usuario(1L, "Alexandre", "alexandre@email.com");
@@ -56,7 +60,7 @@ class ChatServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator);
+		chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator, events);
 	}
 
 	@Test

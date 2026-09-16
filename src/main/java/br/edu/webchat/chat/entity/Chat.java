@@ -4,15 +4,21 @@ import br.edu.webchat.user.entity.User;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -22,11 +28,25 @@ import java.util.Set;
 @Table(name = "chats")
 public class Chat {
 
+	public static final int MAX_PARTICIPANTS = 50;
+	public static final int MAX_NAME_LENGTH = 100;
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@Column(name = "direct_key", nullable = false, unique = true, updatable = false, length = 40)
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, updatable = false, length = 20)
+	private ChatType type;
+
+	@Column(length = MAX_NAME_LENGTH)
+	private String name;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "owner_id")
+	private User owner;
+
+	@Column(name = "direct_key", unique = true, updatable = false, length = 40)
 	private String directKey;
 
 	@OneToMany(mappedBy = "chat", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -41,9 +61,19 @@ public class Chat {
 	protected Chat() {}
 
 	public Chat(User first, User second) {
+		this.type = ChatType.DIRECT;
 		this.directKey = directKeyOf(first.getId(), second.getId());
 		this.participants.add(new ChatParticipant(this, first));
 		this.participants.add(new ChatParticipant(this, second));
+	}
+
+	public static Chat group(String name, User owner) {
+		Chat chat = new Chat();
+		chat.type = ChatType.GROUP;
+		chat.name = name;
+		chat.owner = owner;
+		chat.participants.add(new ChatParticipant(chat, owner));
+		return chat;
 	}
 
 	public static String directKeyOf(Long userId, Long otherUserId) {
@@ -64,6 +94,46 @@ public class Chat {
 
 	public void registerActivity() {
 		this.updatedAt = Instant.now();
+	}
+
+	public boolean isGroup() {
+		return type == ChatType.GROUP;
+	}
+
+	public boolean isOwner(Long userId) {
+		return owner != null && owner.getId().equals(userId);
+	}
+
+	public boolean addParticipant(User user) {
+		if (hasParticipant(user.getId())) {
+			return false;
+		}
+		participants.add(new ChatParticipant(this, user));
+		registerActivity();
+		return true;
+	}
+
+	public boolean removeParticipant(Long userId) {
+		boolean removed = participants.removeIf(participant -> participant.getUser().getId().equals(userId));
+		if (removed) {
+			registerActivity();
+		}
+		return removed;
+	}
+
+	public void rename(String name) {
+		this.name = name;
+		registerActivity();
+	}
+
+	public Optional<User> oldestParticipant() {
+		return participants.stream()
+				.map(ChatParticipant::getUser)
+				.min(Comparator.comparing(User::getId));
+	}
+
+	public void transferOwnershipTo(User user) {
+		this.owner = user;
 	}
 
 	public boolean hasParticipant(Long userId) {
@@ -103,6 +173,18 @@ public class Chat {
 
 	public Long getId() {
 		return id;
+	}
+
+	public ChatType getType() {
+		return type;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public Long getOwnerId() {
+		return owner == null ? null : owner.getId();
 	}
 
 	public String getDirectKey() {

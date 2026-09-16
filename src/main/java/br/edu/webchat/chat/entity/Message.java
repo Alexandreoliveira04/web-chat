@@ -11,6 +11,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 
@@ -26,6 +28,7 @@ public class Message {
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "chat_id", nullable = false, updatable = false)
+	@OnDelete(action = OnDeleteAction.CASCADE)
 	private Chat chat;
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)

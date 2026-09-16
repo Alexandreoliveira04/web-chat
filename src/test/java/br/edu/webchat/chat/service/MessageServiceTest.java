@@ -64,7 +64,7 @@ class MessageServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator);
+		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator, events);
 		messageService = new MessageService(chatService, messageRepository, events);
 
 		conversa = new Chat(alexandre, maria);

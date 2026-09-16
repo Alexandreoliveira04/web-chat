@@ -49,7 +49,12 @@ async function refreshSidebar() {
     const [users, chats] = await Promise.all([UserService.listUsers(), ChatService.listChats()]);
 
     contacts = users.filter(user => user.id !== currentUser.id);
-    chatsByContactId = new Map(chats.map(chat => [otherParticipant(chat).id, chat]));
+
+    // Estas páginas estáticas só sabem exibir conversas individuais; os grupos aparecem
+    // no front Next.js (fase 7).
+    chatsByContactId = new Map(chats
+        .filter(chat => chat.type === 'DIRECT')
+        .map(chat => [otherParticipant(chat).id, chat]));
 
     if (activeChat) {
         activeChat = findChatById(activeChat.id) ?? activeChat;

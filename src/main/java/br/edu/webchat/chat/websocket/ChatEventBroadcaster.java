@@ -1,5 +1,6 @@
 package br.edu.webchat.chat.websocket;
 
+import br.edu.webchat.chat.service.ChatChangedEvent;
 import br.edu.webchat.chat.service.MessageSentEvent;
 import br.edu.webchat.chat.service.MessagesReadEvent;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -19,6 +20,12 @@ public class ChatEventBroadcaster {
 	public void onMessageSent(MessageSentEvent event) {
 		event.recipientEmails().forEach(email ->
 				messaging.convertAndSendToUser(email, WebSocketConfig.MESSAGES_QUEUE, event.message()));
+	}
+
+	@TransactionalEventListener
+	public void onChatChanged(ChatChangedEvent event) {
+		event.recipientEmails().forEach(email ->
+				messaging.convertAndSendToUser(email, WebSocketConfig.CHATS_QUEUE, event.event()));
 	}
 
 	@TransactionalEventListener

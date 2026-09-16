@@ -5,6 +5,7 @@ import br.edu.webchat.chat.dto.CreateChatRequest;
 import br.edu.webchat.chat.dto.CreateChatResult;
 import br.edu.webchat.chat.dto.MessageResponse;
 import br.edu.webchat.chat.dto.ParticipantResponse;
+import br.edu.webchat.chat.entity.ChatType;
 import br.edu.webchat.chat.service.ChatService;
 import br.edu.webchat.shared.exception.BadRequestException;
 import br.edu.webchat.shared.exception.ForbiddenException;
@@ -48,7 +49,7 @@ class ChatControllerTest {
 
 	private static final Authentication LOGADO = new UsernamePasswordAuthenticationToken(EMAIL, null, List.of());
 
-	private static final ChatResponse CONVERSA = new ChatResponse(10L,
+	private static final ChatResponse CONVERSA = new ChatResponse(10L, ChatType.DIRECT, null, null,
 			List.of(new ParticipantResponse(1L, "Alexandre", EMAIL, UserStatus.OFFLINE),
 					new ParticipantResponse(2L, "Maria", "maria@email.com", UserStatus.ONLINE)),
 			new MessageResponse(99L, 10L, 2L, "oi, tudo bem?", Instant.parse("2026-09-14T22:05:00Z")),

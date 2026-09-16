@@ -73,6 +73,7 @@ public class StompAuthInterceptor implements ChannelInterceptor {
 		return destination != null && (destination.equals(WebSocketConfig.PRESENCE_TOPIC)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.MESSAGES_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.READ_QUEUE)
+				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CHATS_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.ERRORS_QUEUE));
 	}
 
