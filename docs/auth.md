@@ -1,11 +1,12 @@
 # Módulo `auth`
 
 **Pacote:** `br.edu.webchat.auth`
-**Fase:** 3
+**Fase:** 3 (+ 3.1 — papéis e permissões)
 **Situação:** implementado
 
-Responsável pela autenticação: login, emissão e validação de JWT, e a configuração do
-Spring Security que protege o restante da API.
+Responsável pela autenticação (registro, login, emissão e validação de JWT) e pela
+autorização: a configuração do Spring Security que protege o restante da API e aplica
+as regras por papel.
 
 O AUTH **autentica**; quem responde pelos dados do colaborador continua sendo o
 módulo [user](user.md).
@@ -22,9 +23,28 @@ auth/
 └── service/      AuthService, CustomUserDetailsService
 ```
 
-Não há `entity/` nem `repository/`: as credenciais ficam na tabela `users` e são
-lidas pelo `UserRepository` do módulo USER. O AUTH **não** alterou o schema — nenhuma
-migration foi criada nesta etapa, e o JWT não é persistido.
+Não há `entity/` nem `repository/`: as credenciais e o papel ficam na tabela `users` e
+são lidos pelo `UserRepository` do módulo USER. O JWT não é persistido.
+
+## Registro
+
+```http
+POST /api/v1/auth/register
+Content-Type: application/json
+
+{ "name": "Alexandre Oliveira", "email": "alexandre@email.com", "password": "123456" }
+```
+
+Resposta `201 Created`, com `Location: /api/v1/users/{id}` e o `UserResponse` no corpo.
+
+O `AuthController` delega ao `UserService.create` do módulo USER, que continua dono das
+regras de cadastro (e-mail normalizado, 409 para duplicado, senha em BCrypt).
+
+O usuário criado é **sempre `USER`**. `CreateUserRequest` não tem campo `role`, então
+um `"role": "ADMIN"` no JSON é simplesmente ignorado.
+
+> Até o Módulo 0 o cadastro ficava em `POST /api/v1/users`. A rota foi removida e hoje
+> responde 401 sem token, como qualquer rota protegida.
 
 ## Login
 
@@ -83,19 +103,104 @@ duas vezes por requisição.
 | Rota | Acesso |
 | ---- | ------ |
 | `GET /api/v1/health` | público |
+| `POST /api/v1/auth/register` | público |
 | `POST /api/v1/auth/login` | público |
-| `POST /api/v1/users` | público (cadastro inicial) |
+| frontend (`/`, `/login`, `/chat`, `/_next/**`, assets) | público |
 | `GET /api/v1/users` | autenticado |
 | `GET /api/v1/users/{id}` | autenticado |
 | `GET /api/v1/users/me` | autenticado |
-| `PUT /api/v1/users/{id}` | autenticado |
-| `/api/v1/chats/**`, `/api/v1/messages/**` | autenticado (módulos ainda não implementados) |
+| `PUT /api/v1/users/me` | autenticado |
+| `PUT /api/v1/users/{id}` | **ADMIN** |
+| `PATCH /api/v1/users/{id}/role` | **ADMIN** |
+| `/api/v1/chats/**` | autenticado (e participante da conversa, checado no service) |
+| `/ws` (handshake WebSocket) | público no HTTP; autenticação no frame STOMP `CONNECT` (ver abaixo) |
 | qualquer outra | autenticado |
+
+**A ordem das regras importa.** O Spring Security usa a primeira regra que casar, e o
+padrão `/api/v1/users/{id}` também casa com `/api/v1/users/me`. Por isso a regra de
+`PUT /users/me` vem antes da de `PUT /users/{id}` no `SecurityConfig`.
 
 Como a regra final é `anyRequest().authenticated()`, uma rota inexistente sob
 `/api/v1` passa a responder **401** em vez de 404 quando não há token — o Spring
 Security decide antes de o roteamento acontecer. É o comportamento desejado: não
 revela quais rotas existem.
+
+## WebSocket
+
+O handshake `GET /ws` é liberado no `SecurityConfig` porque a API de WebSocket dos
+navegadores não permite enviar o header `Authorization` no upgrade. O JWT vai no frame STOMP
+`CONNECT`:
+
+```text
+CONNECT
+Authorization:Bearer <token>
+```
+
+O `StompAuthInterceptor` (módulo chat) reaproveita o `JwtService` e o `UserDetailsService`
+deste módulo: token ausente, inválido, expirado ou de usuário removido gera frame `ERROR`
+(`Autenticacao necessaria`) e a conexão é encerrada. Com o token válido, o usuário vira o
+`Principal` da sessão STOMP, usado em todos os frames seguintes — o remetente de uma mensagem
+nunca vem do payload.
+
+Proteções adicionais:
+
+- **origem do handshake** restrita a `WS_ALLOWED_ORIGINS` (padrão
+  `http://localhost:*,http://127.0.0.1:*`); outra origem recebe HTTP 403;
+- `SUBSCRIBE` e `SEND` são recusados antes do `CONNECT` autenticado e fora dos destinos
+  permitidos.
+
+Como o token não vai em cookie, a conexão não carrega credenciais "automáticas" do navegador;
+por isso não se usa o CSRF do `spring-security-messaging`.
+
+Detalhes do protocolo em [chat](chat.md#websocket).
+
+## Autorização por papéis
+
+| Papel | Pode |
+| ----- | ---- |
+| `USER` | ler colaboradores; ler e atualizar o próprio perfil (`/users/me`); usar o chat |
+| `ADMIN` | tudo de `USER`; atualizar qualquer colaborador (`PUT /users/{id}`); alterar papéis (`PATCH /users/{id}/role`) |
+
+Como funciona:
+
+1. O papel fica em `users.role` (enum `Role` do módulo USER).
+2. O `CustomUserDetailsService` carrega o usuário e registra o papel com
+   `.roles(user.getRole().name())`, o que gera a authority `ROLE_USER` ou `ROLE_ADMIN`.
+3. O `SecurityConfig` exige `hasRole("ADMIN")` nas rotas administrativas.
+4. Um `USER` que chama uma rota de `ADMIN` recebe **403** do `SecurityErrorHandler`,
+   antes de o controller ser executado.
+
+**O papel não vai no JWT.** O filtro recarrega o usuário do banco a cada requisição, então
+promover ou rebaixar alguém vale **na próxima requisição**, sem esperar o token expirar.
+O custo é uma consulta por requisição, a mesma que já era feita para validar se o usuário
+ainda existe.
+
+**Ninguém altera o próprio papel.** Essa regra de negócio fica no `UserService.changeRole`
+e lança `ForbiddenException` (403). Assim um administrador nunca se rebaixa por engano, e
+como só um ADMIN rebaixa outro ADMIN, o sistema sempre mantém pelo menos um.
+
+A autorização por **recurso** (por exemplo, "só participantes leem a conversa") não é
+papel: ela fica nos services dos módulos e também usa `ForbiddenException`. O papel `ADMIN`
+**não** dá acesso a conversas de terceiros.
+
+### Administrador inicial
+
+Na inicialização, o `AdminInitializer` (módulo USER) lê:
+
+| Propriedade | Variável | Padrão |
+| ----------- | -------- | ------ |
+| `app.admin.email` | `ADMIN_EMAIL` | vazio: nenhum admin é criado |
+| `app.admin.password` | `ADMIN_PASSWORD` | vazio |
+| `app.admin.name` | `ADMIN_NAME` | `Administrador` |
+
+- Se o e-mail já existe, o usuário é **promovido** a ADMIN, sem trocar nome nem senha.
+- Se não existe, é criado como ADMIN. Nesse caso a senha é obrigatória (mínimo de 6
+  caracteres) e a aplicação não sobe sem ela.
+- A operação é idempotente: reiniciar a aplicação não duplica nada.
+
+O perfil `dev` traz um administrador descartável (`admin@webchat.local` / `admin123`),
+com o mesmo critério do `JWT_SECRET` de desenvolvimento: não serve para nenhum outro
+ambiente.
 
 ## JWT
 
@@ -138,7 +243,8 @@ e escreve o mesmo [`ApiError`](shared.md#formato-de-erro) usado no resto da API.
 | -------- | ------ | ------ |
 | Credenciais inválidas no login | 401 | `UnauthorizedException` → `GlobalExceptionHandler` |
 | Token ausente, inválido ou expirado | 401 | `SecurityErrorHandler.commence` |
-| Autenticado sem permissão | 403 | `SecurityErrorHandler.handle` |
+| Papel insuficiente para a rota | 403 (`Acesso negado`) | `SecurityErrorHandler.handle` |
+| Regra de negócio proíbe a operação (ex.: alterar o próprio papel) | 403 | `ForbiddenException` → `GlobalExceptionHandler` |
 | Entrada inválida | 400 | `GlobalExceptionHandler` |
 
 ## Testes
@@ -147,7 +253,8 @@ e escreve o mesmo [`ApiError`](shared.md#formato-de-erro) usado no resto da API.
 | ------ | ----- |
 | `JwtServiceTest` | geração, expiração, assinatura de outro segredo, payload adulterado, segredo curto |
 | `AuthServiceTest` | login válido, e-mail inexistente, senha incorreta, mensagem idêntica nos dois casos |
-| `SecurityIntegrationTest` | cadeia real: público × protegido, `/users/me`, token expirado/inválido, usuário removido |
+| `AuthControllerTest` | registro: 201 + `Location`, 400 com campos, 409 |
+| `SecurityIntegrationTest` | cadeia real: público × protegido, `/users/me`, token expirado/inválido, usuário removido; papéis: USER recebe 403 nas rotas de ADMIN, ADMIN atualiza qualquer um, ninguém altera o próprio papel, promoção vale com o mesmo token, `role` no corpo do registro é ignorado |
 
 Os testes de controller com `@WebMvcTest` usam `@AutoConfigureMockMvc(addFilters =
 false)`: eles verificam o comportamento do controller, e a segurança é coberta pelo
@@ -156,10 +263,14 @@ false)`: eles verificam o comportamento do controller, e a segurança é coberta
 ## Pendências
 
 - **Sem refresh token.** Expirado o JWT, é preciso novo login.
-- **Sem roles/RBAC.** A lista de authorities é vazia; o 403 está configurado, mas
-  nenhuma regra o dispara hoje.
+- **WebSocket valida o token só no `CONNECT`.** Uma conexão aberta continua ativa depois que
+  o token expira; a próxima reconexão é recusada e o front volta ao login.
+- **Um papel por usuário.** Não há permissões granulares nem múltiplos papéis; basta
+  para o MVP. Se necessário, `role` pode virar uma tabela `user_roles`.
 - **Nenhum estado de usuário bloqueia o login.** `UserStatus` só tem `ONLINE` e
   `OFFLINE`, e todo usuário nasce `OFFLINE` — bloquear esse valor impediria qualquer
   login. Um estado do tipo "inativo" exigiria um novo valor no enum, fora do escopo
   desta etapa.
-- **CORS não configurado.** Será necessário quando o frontend Next.js existir.
+- **CORS liberado por origem configurável** (`CORS_ALLOWED_ORIGINS`), necessário porque em
+  desenvolvimento o frontend roda em outra porta. Em produção, front e API ficam na mesma
+  origem.

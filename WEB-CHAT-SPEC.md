@@ -49,7 +49,8 @@ O sistema deverá permitir:
 - login;
 - autenticação utilizando JWT;
 - acesso somente a recursos autenticados;
-- identificação do usuário autenticado.
+- identificação do usuário autenticado;
+- autorização por papéis (`USER` e `ADMIN`).
 
 ### 3.2 Usuários
 
@@ -59,7 +60,9 @@ O sistema deverá permitir:
 - consultar um colaborador;
 - consultar o próprio perfil;
 - atualizar dados básicos do próprio perfil;
-- representar o status do usuário como online/offline.
+- representar o status do usuário como online/offline;
+- administradores atualizarem dados básicos de qualquer colaborador;
+- administradores alterarem o papel de outros colaboradores.
 
 ### 3.3 Conversas
 
@@ -68,9 +71,13 @@ O sistema deverá permitir:
 - iniciar uma conversa individual;
 - listar as conversas do usuário autenticado;
 - consultar os participantes de uma conversa;
-- consultar o histórico de mensagens.
+- consultar o histórico de mensagens;
+- criar conversas em grupo, com nome e vários participantes;
+- renomear o grupo, adicionar e remover participantes (somente quem criou);
+- sair de um grupo.
 
-O MVP não terá grupos.
+O MVP entregue (fases 1–6) teve apenas conversas individuais; os grupos entraram na
+ampliação de escopo da Fase 9.
 
 ### 3.4 Mensagens
 
@@ -82,7 +89,9 @@ O sistema deverá permitir:
 - consultar histórico;
 - identificar remetente;
 - armazenar data/hora;
-- marcar mensagens como lidas.
+- marcar mensagens como lidas, de forma independente para cada participante;
+- editar a própria mensagem;
+- apagar a própria mensagem.
 
 ---
 
@@ -90,13 +99,10 @@ O sistema deverá permitir:
 
 Os seguintes recursos não fazem parte do MVP:
 
-- grupos;
 - chamadas de áudio;
 - chamadas de vídeo;
 - envio de arquivos;
 - envio de imagens;
-- edição de mensagens;
-- exclusão de mensagens;
 - respostas/threads;
 - reações;
 - busca avançada;
@@ -112,6 +118,10 @@ Os seguintes recursos não fazem parte do MVP:
 - DDD complexo.
 
 Esses recursos poderão ser adicionados posteriormente caso sejam necessários.
+
+**Ampliação de escopo (pós-MVP).** Grupos, edição e exclusão de mensagens saíram desta
+lista e passaram a fazer parte do escopo, junto com o frontend Next.js da Fase 7. As fases
+9 e 10 detalham o que muda.
 
 ---
 
@@ -136,12 +146,14 @@ Spring Boot 3 possui Java 17 como requisito mínimo. A versão exata do Spring B
 
 ### Frontend
 
-Planejado:
-
-- Next.js
+- Next.js 16 (App Router)
 - TypeScript
+- Tailwind CSS
+- `@stomp/stompjs` para o tempo real
 
-O frontend não faz parte da primeira etapa de implementação.
+Implementado na Fase 7, em `frontend/`, com **export estático**: o build gera HTML/JS que o
+próprio Spring Boot serve, mantendo um único artefato de deploy. Detalhes em
+[docs/frontend.md](docs/frontend.md).
 
 ### Infraestrutura
 
@@ -243,7 +255,7 @@ Entidades JPA não devem ser expostas diretamente nas respostas da API.
 
 ### 8.1 AUTH
 
-Responsável pela autenticação.
+Responsável pela autenticação e pela autorização.
 
 Responsabilidades:
 
@@ -251,15 +263,18 @@ Responsabilidades:
 - login;
 - geração de JWT;
 - validação do JWT;
-- integração com Spring Security.
+- integração com Spring Security;
+- regras de acesso por papel.
 
 Estrutura:
 
 ```text
 auth/
+├── config/       SecurityConfig, SecurityErrorHandler
 ├── controller/
 ├── dto/
-├── security/
+├── filter/       JwtAuthenticationFilter
+├── jwt/          JwtService
 └── service/
 ```
 
@@ -273,6 +288,7 @@ Estrutura:
 
 ```text
 user/
+├── config/       AdminInitializer (administrador inicial)
 ├── controller/
 ├── dto/
 ├── entity/
@@ -286,7 +302,8 @@ Responsabilidades:
 - consulta;
 - atualização;
 - perfil;
-- status.
+- status;
+- papel (`USER` / `ADMIN`).
 
 ---
 
@@ -298,12 +315,12 @@ Estrutura:
 
 ```text
 chat/
-├── controller/
+├── controller/   ChatController, MessageController
 ├── dto/
-├── entity/
-├── repository/
-├── service/
-└── websocket/
+├── entity/       Chat, ChatType, ChatParticipant, Message
+├── repository/   ChatRepository, MessageRepository
+├── service/      ChatService, ChatCreator, MessageService
+└── websocket/    WebSocketConfig, StompAuthInterceptor, ChatWebSocketController, ChatEventBroadcaster, PresenceService
 ```
 
 Responsabilidades:
@@ -342,33 +359,44 @@ Evitar transformar `shared` em um depósito de classes sem responsabilidade clar
 
 ```text
 web-chat/
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── br/
-│   │   │       └── edu/
-│   │   │           └── webchat/
-│   │   │               ├── WebChatApplication.java
-│   │   │               │
-│   │   │               ├── auth/
-│   │   │               ├── user/
-│   │   │               ├── chat/
-│   │   │               └── shared/
+├── backend/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/
+│   │   │   │   └── br/
+│   │   │   │       └── edu/
+│   │   │   │           └── webchat/
+│   │   │   │               ├── WebChatApplication.java
+│   │   │   │               │
+│   │   │   │               ├── auth/
+│   │   │   │               ├── user/
+│   │   │   │               ├── chat/
+│   │   │   │               └── shared/
+│   │   │   │
+│   │   │   └── resources/
+│   │   │       ├── application.yml
+│   │   │       └── application-dev.yml
 │   │   │
-│   │   └── resources/
-│   │       ├── application.yml
-│   │       └── application-dev.yml
+│   │   └── test/
 │   │
-│   └── test/
+│   ├── pom.xml
+│   └── mvnw, mvnw.cmd, .mvn/
 │
+├── frontend/                    (Next.js: app, components, lib)
+├── docs/
 ├── compose.yaml
 ├── Dockerfile
-├── pom.xml
 ├── README.md
+├── WEB-CHAT-SPEC.md
 └── .gitignore
 ```
 
 O package raiz deverá ser ajustado caso o projeto existente utilize outro namespace.
+
+**Decisão de organização.** Até a Fase 7 o projeto Maven ficava na raiz. Com a chegada do
+frontend, backend e frontend passaram a ser duas pastas irmãs (`backend/` e `frontend/`),
+cada uma com as próprias ferramentas de build. Continua sendo **um único projeto Maven** e um
+único artefato de deploy, como manda a seção 6.
 
 ---
 
@@ -382,6 +410,7 @@ name
 email
 password
 status
+role
 created_at
 updated_at
 ```
@@ -391,27 +420,45 @@ Regras:
 - `id` deve ser gerado automaticamente;
 - `email` deve ser único;
 - `password` deve ser armazenada somente com hash;
-- `status` representa o estado atual do usuário.
+- `status` representa o estado atual do usuário;
+- `role` é o papel do usuário (`USER` ou `ADMIN`), com padrão `USER`.
 
 ### chats
 
 ```text
 id
+direct_key
 created_at
 updated_at
 ```
+
+Regras:
+
+- `direct_key` identifica o par de usuários da conversa individual, com o menor id primeiro (ex.: `3:4`);
+- `direct_key` é único: existe no máximo uma conversa por par de usuários, garantido pelo banco.
 
 ### chat_participants
 
 ```text
 chat_id
 user_id
+last_read_message_id
+joined_at
 ```
 
 Regras:
 
-- um chat individual possui exatamente dois participantes;
-- um usuário não pode participar duas vezes da mesma conversa.
+- um chat individual possui exatamente dois participantes; um grupo possui de um a cinquenta;
+- um usuário não pode participar duas vezes da mesma conversa (chave primária composta `(chat_id, user_id)`);
+- entre o mesmo par de usuários existe uma única conversa (`chats.direct_key` único): uma nova tentativa, inclusive simultânea, reaproveita a existente;
+- `last_read_message_id` é a última mensagem lida por **aquele** participante; nulo enquanto ele não leu nada.
+
+> **Decisão da Fase 9 (substitui a decisão da Fase 4).** Até a Fase 6, `chat_participants`
+> era apenas uma tabela de junção (`@ManyToMany`), sem colunas próprias, e a leitura ficava
+> em `messages.read_at`. Isso não funciona em grupo: o primeiro participante que abrisse a
+> conversa marcaria as mensagens como lidas para todos, zerando o contador dos demais.
+> Com a leitura por participante, `chat_participants` passou a ter colunas próprias e virou
+> a entidade `ChatParticipant`, como a versão original desta spec previa.
 
 ### messages
 
@@ -421,16 +468,23 @@ chat_id
 sender_id
 content
 created_at
-read_at
+edited_at
+deleted_at
 ```
 
 Regras:
 
 - uma mensagem pertence a uma conversa;
-- uma mensagem possui exatamente um remetente;
-- o conteúdo não pode ser vazio;
+- uma mensagem possui exatamente um remetente, sempre o usuário autenticado que a enviou;
+- somente participantes da conversa enviam e leem mensagens;
+- o conteúdo não pode ser vazio nem só espaços (validado na API e por `CHECK` no banco) e tem no máximo 2000 caracteres;
+- espaços nas pontas do conteúdo são removidos antes de gravar;
 - `created_at` é preenchido automaticamente;
-- `read_at` pode ser nulo.
+- a leitura não fica na mensagem: cada participante guarda a própria em `chat_participants.last_read_message_id`;
+- `edited_at` é preenchido quando o autor edita a mensagem; nulo enquanto não houver edição;
+- `deleted_at` é preenchido quando o autor apaga a mensagem; o conteúdo é esvaziado e a mensagem permanece no histórico marcada como apagada;
+- somente o autor edita ou apaga a própria mensagem, e nunca uma já apagada;
+- enviar uma mensagem atualiza `chats.updated_at` (última atividade da conversa).
 
 ---
 
@@ -448,10 +502,12 @@ User
 
 Relacionamentos principais:
 
+- Chat 1:N ChatParticipant (no JPA: `Chat.participants`, `@OneToMany` com `orphanRemoval`)
 - User 1:N ChatParticipant
-- Chat 1:N ChatParticipant
+- ChatParticipant N:1 Message (a última mensagem lida por aquele participante)
 - Chat 1:N Message
-- User 1:N Message
+- User 1:N Message (remetente)
+- Chat N:1 User (dono do grupo; nulo em conversa individual)
 
 ---
 
@@ -473,21 +529,51 @@ POST /api/v1/auth/login
 ### Users
 
 ```http
-GET /api/v1/users
-GET /api/v1/users/{id}
-GET /api/v1/users/me
-PUT /api/v1/users/me
+GET   /api/v1/users
+GET   /api/v1/users/{id}
+GET   /api/v1/users/me
+PUT   /api/v1/users/me
+PUT   /api/v1/users/{id}          (ADMIN)
+PATCH /api/v1/users/{id}/role     (ADMIN)
 ```
 
 ### Chats
 
 ```http
-GET /api/v1/chats
-POST /api/v1/chats
-GET /api/v1/chats/{chatId}
-GET /api/v1/chats/{chatId}/messages
-POST /api/v1/chats/{chatId}/messages
+GET    /api/v1/chats
+POST   /api/v1/chats
+POST   /api/v1/chats/groups
+GET    /api/v1/chats/{chatId}
+PATCH  /api/v1/chats/{chatId}
+POST   /api/v1/chats/{chatId}/participants
+DELETE /api/v1/chats/{chatId}/participants/{userId}
+DELETE /api/v1/chats/{chatId}/participants/me
+GET    /api/v1/chats/{chatId}/messages?before={messageId}&size={1-100}
+POST   /api/v1/chats/{chatId}/messages
+PATCH  /api/v1/chats/{chatId}/messages/{messageId}
+DELETE /api/v1/chats/{chatId}/messages/{messageId}
+PATCH  /api/v1/chats/{chatId}/messages/read
 ```
+
+`POST /api/v1/chats` recebe `{ "participantId": <id> }` e responde `201` com `Location`
+quando cria a conversa, ou `200` com a conversa já existente entre os dois usuários.
+Qualquer endpoint com `{chatId}` de uma conversa da qual o usuário não participa resulta em
+`403`, inclusive para `ADMIN`.
+
+Decisões da Fase 5:
+
+- **listagem de conversas** (`GET /chats`, `GET /chats/{chatId}`) traz `lastMessage` e
+  `unreadCount` (mensagens do outro participante ainda não lidas), calculados na consulta
+  a partir de `messages`, sem colunas denormalizadas em `chats`;
+- **histórico paginado por cursor**: sem `before`, as `size` mensagens mais recentes (padrão
+  50); com `before`, as anteriores ao id informado. A resposta traz as mensagens em ordem
+  cronológica, `hasMore` e `nextBefore`. Cursor em vez de offset para que mensagens novas
+  não desloquem as páginas;
+- **leitura explícita**: `PATCH /chats/{chatId}/messages/read` marca como lidas todas as
+  mensagens recebidas ainda não lidas e devolve a quantidade; o `GET` do histórico não
+  altera dados;
+- `POST /chats/{chatId}/messages` recebe `{ "content": "..." }` e responde `201` com a
+  mensagem criada.
 
 Os endpoints poderão evoluir conforme a implementação.
 
@@ -513,7 +599,33 @@ WebSocket será utilizado para:
 
 A implementação deverá utilizar uma abordagem compatível com o ecossistema Spring, preferencialmente STOMP sobre WebSocket.
 
-O protocolo e os destinos exatos deverão ser documentados durante a implementação.
+### 13.1 Protocolo (Fase 6)
+
+Implementado com **STOMP sobre WebSocket nativo** e o broker simples em memória do Spring.
+Referência completa em [docs/chat.md](docs/chat.md#websocket).
+
+| Item | Valor |
+| ---- | ----- |
+| Endpoint | `/ws` (handshake HTTP público; origens restritas por `WS_ALLOWED_ORIGINS`) |
+| Autenticação | `Authorization: Bearer <jwt>` no frame `CONNECT`; token inválido → frame `ERROR` e conexão encerrada |
+| Envio | `SEND /app/chats/{chatId}/messages` com `{ "content": "..." }` |
+| Mensagens recebidas | `/user/queue/messages` — `MessageResponse`, para os dois participantes |
+| Leitura | `/user/queue/read` — `{ chatId, readerId, lastReadMessageId, markedAsRead }`, para os participantes |
+| Erros do envio | `/user/queue/errors` — `ApiError`, só para quem enviou |
+| Mensagem editada/apagada | `/user/queue/message-updates` — `MessageResponse` com `editedAt`/`deletedAt`, para os participantes |
+| Conversas | `/user/queue/chats` — `{ event, chatId }` (`CREATED`/`UPDATED`/`REMOVED`), para os participantes afetados |
+| Presença | `/topic/presence` — `{ userId, status }`, para todos os conectados |
+
+Regras:
+
+- envio por WebSocket e por `POST /chats/{chatId}/messages` passam pelo mesmo service, com as
+  mesmas validações; os dois caminhos notificam em tempo real;
+- as notificações são enviadas somente **após o commit** da transação;
+- destinos por usuário (`/user/queue/...`) em vez de um tópico por conversa: uma assinatura
+  recebe todas as conversas do usuário e o Spring entrega apenas às sessões dele;
+- o cliente só pode assinar os quatro destinos acima e só pode enviar para `/app/...`;
+- `users.status` é `ONLINE` enquanto o usuário tiver ao menos uma conexão aberta e volta a
+  `OFFLINE` quando a última fecha; na inicialização todos são marcados `OFFLINE`.
 
 ---
 
@@ -545,6 +657,29 @@ Authorization: Bearer <token>
 ```
 
 Senhas nunca devem ser armazenadas em texto puro.
+
+### 14.1 Autorização por papéis
+
+Decisão tomada no Módulo 0, para corrigir a falha em que qualquer usuário autenticado
+podia alterar os dados de outro colaborador.
+
+Papéis:
+
+| Papel | Permissões |
+| ----- | ---------- |
+| `USER` | ler colaboradores, ler e atualizar o **próprio** perfil (`/users/me`), usar o chat |
+| `ADMIN` | tudo de `USER`, mais atualizar qualquer colaborador e alterar papéis |
+
+Regras:
+
+- cada usuário possui **um único papel**, armazenado na coluna `users.role`;
+- o cadastro público (`POST /auth/register`) cria sempre `USER`; o papel nunca vem do corpo da requisição;
+- as regras de acesso por rota ficam no `SecurityConfig` (`hasRole("ADMIN")`); violação resulta em **403**;
+- o papel **não** é gravado no JWT: ele é lido do banco a cada requisição, então uma mudança de papel vale imediatamente;
+- nenhum usuário pode alterar o próprio papel (403), o que impede que o sistema fique sem administrador;
+- o administrador inicial é criado (ou promovido) na inicialização a partir de `ADMIN_EMAIL`, `ADMIN_PASSWORD` e `ADMIN_NAME`; sem `ADMIN_EMAIL`, nada é criado.
+
+Administradores **não** ganham acesso a conversas de terceiros: a regra de participante do chat vale para todos os papéis.
 
 ---
 
@@ -598,6 +733,11 @@ DB_NAME
 DB_USER
 DB_PASSWORD
 JWT_SECRET
+ADMIN_NAME
+ADMIN_EMAIL
+ADMIN_PASSWORD
+WS_ALLOWED_ORIGINS
+CORS_ALLOWED_ORIGINS
 ```
 
 O arquivo `application.yml` deverá utilizar variáveis de ambiente quando apropriado.
@@ -645,15 +785,23 @@ O projeto deverá utilizar uma ferramenta de migrations, preferencialmente Flywa
 
 As migrations devem ser versionadas no Git.
 
-Exemplo:
+Migrations atuais e previstas:
 
 ```text
-src/main/resources/db/migration/
-├── V1__create_users.sql
-├── V2__create_chats.sql
-├── V3__create_chat_participants.sql
-└── V4__create_messages.sql
+backend/src/main/resources/db/migration/
+├── V1__init.sql                          (aplicada)
+├── V2__create_users.sql                  (aplicada)
+├── V3__add_role_to_users.sql             (aplicada)
+├── V4__create_chats.sql                  (aplicada)
+├── V5__create_chat_participants.sql      (aplicada)
+├── V6__add_direct_key_to_chats.sql       (aplicada)
+├── V7__create_messages.sql               (aplicada)
+├── V8__add_read_state_to_participants.sql (aplicada — leitura por participante)
+├── V9__add_groups_to_chats.sql           (aplicada — grupos)
+└── V10__add_edit_and_delete_to_messages.sql (aplicada — editar/apagar)
 ```
+
+Migrations já aplicadas nunca devem ser editadas; qualquer mudança de schema entra em uma nova versão.
 
 O Hibernate não deverá ser utilizado como mecanismo principal de versionamento do schema em produção.
 
@@ -678,6 +826,11 @@ Fluxos mínimos:
 - envio de mensagem;
 - consulta de histórico.
 
+Os cinco fluxos são cobertos de ponta a ponta por `MvpFlowIntegrationTest`, que sobe o
+servidor em porta real e percorre cadastro → login → criação da conversa → envio → histórico
+→ leitura, verificando também que endpoint protegido exige token e que quem não participa
+recebe 403. O tempo real é coberto por `RealtimeIntegrationTest`, com cliente STOMP real.
+
 ---
 
 ## 21. Docker
@@ -690,6 +843,20 @@ O projeto deverá possuir:
 Durante o desenvolvimento inicial, não é obrigatório executar o Spring Boot dentro do Docker.
 
 A prioridade é manter o banco containerizado e o backend executando pela IDE/Maven.
+
+### Implementado (Módulo 4)
+
+- **`Dockerfile` multi-stage**: estágio Node (`node:22-alpine`) gera o export do frontend,
+  estágio Maven (`maven:3.9-eclipse-temurin-17`, com dependências em camada separada do
+  código) empacota o jar já com o front em `static/` — o `pom.xml` declara `frontend/out`
+  como recurso —, e o runtime é `eclipse-temurin:17-jre-alpine` executando como usuário sem
+  privilégios.
+- **`compose.yaml`**: o serviço `app` fica no profile `app`, então `docker compose up -d`
+  continua subindo apenas o banco (fluxo de desenvolvimento) e
+  `docker compose --profile app up -d --build` sobe banco + aplicação. O `app` espera o
+  healthcheck do PostgreSQL e tem o próprio healthcheck em `/api/v1/health`.
+- Toda a configuração do container vem de variáveis de ambiente, com padrões descartáveis
+  apenas para uso local.
 
 ---
 
@@ -707,6 +874,12 @@ Requisitos:
 - nenhuma credencial armazenada no código.
 
 O serviço exato da Google Cloud será definido posteriormente.
+
+**Restrição conhecida (Fase 6):** o broker STOMP simples e o controle de presença ficam em
+memória, então o tempo real funciona corretamente com **uma única instância** da aplicação.
+Escalar para várias instâncias exigirá um broker externo (ex.: RabbitMQ via
+`enableStompBrokerRelay`) e presença compartilhada — tecnologias hoje fora do escopo (§4). O
+REST continua stateless.
 
 ---
 
@@ -785,7 +958,7 @@ Exemplo:
 
 ```json
 {
-  "id": "uuid",
+  "id": 1,
   "createdAt": "2026-09-08T22:00:00Z"
 }
 ```
@@ -796,77 +969,112 @@ Exemplo:
 
 ### Fase 1 — Fundação
 
-- [ ] revisar projeto Maven existente;
-- [ ] configurar Java 17;
-- [ ] configurar Spring Boot;
-- [ ] configurar PostgreSQL;
-- [ ] configurar Docker Compose;
-- [ ] configurar Flyway;
-- [ ] organizar pacotes.
+- [x] revisar projeto Maven existente;
+- [x] configurar Java 17;
+- [x] configurar Spring Boot;
+- [x] configurar PostgreSQL;
+- [x] configurar Docker Compose;
+- [x] configurar Flyway;
+- [x] organizar pacotes.
 
 ### Fase 2 — USER
 
-- [ ] entidade User;
-- [ ] migration;
-- [ ] repository;
-- [ ] service;
-- [ ] DTOs;
-- [ ] controller;
-- [ ] validações;
-- [ ] testes.
+- [x] entidade User;
+- [x] migration;
+- [x] repository;
+- [x] service;
+- [x] DTOs;
+- [x] controller;
+- [x] validações;
+- [x] testes.
 
 ### Fase 3 — AUTH
 
-- [ ] registro;
-- [ ] BCrypt;
-- [ ] login;
-- [ ] JWT;
-- [ ] Spring Security;
-- [ ] proteção dos endpoints;
-- [ ] testes.
+- [x] registro;
+- [x] BCrypt;
+- [x] login;
+- [x] JWT;
+- [x] Spring Security;
+- [x] proteção dos endpoints;
+- [x] testes.
+
+### Fase 3.1 — PAPÉIS E PERMISSÕES (Módulo 0)
+
+- [x] papel `USER` / `ADMIN` na entidade User;
+- [x] migration `V3__add_role_to_users.sql`;
+- [x] `POST /auth/register` substitui `POST /users`;
+- [x] `PUT /users/me` para o próprio perfil;
+- [x] `PUT /users/{id}` e `PATCH /users/{id}/role` restritos a ADMIN;
+- [x] `ForbiddenException` (403);
+- [x] administrador inicial via variáveis de ambiente;
+- [x] testes.
 
 ### Fase 4 — CHAT
 
-- [ ] entidade Chat;
-- [ ] participantes;
-- [ ] migrations;
-- [ ] repositories;
-- [ ] services;
-- [ ] controllers;
-- [ ] criação de conversas;
-- [ ] listagem de conversas.
+- [x] entidade Chat;
+- [x] participantes;
+- [x] migrations;
+- [x] repositories;
+- [x] services;
+- [x] controllers;
+- [x] criação de conversas;
+- [x] listagem de conversas;
+- [x] unicidade da conversa por par (`direct_key`);
+- [x] testes.
 
 ### Fase 5 — MESSAGE
 
-- [ ] entidade Message;
-- [ ] migration;
-- [ ] envio;
-- [ ] histórico;
-- [ ] leitura;
-- [ ] testes.
+- [x] entidade Message;
+- [x] migration;
+- [x] envio;
+- [x] histórico (paginação por cursor);
+- [x] leitura;
+- [x] última mensagem e não lidas na listagem de conversas;
+- [x] integração das páginas estáticas com a API de conversas e mensagens;
+- [x] testes.
 
 ### Fase 6 — WEBSOCKET
 
-- [ ] configuração;
-- [ ] conexão;
-- [ ] autenticação;
-- [ ] envio;
-- [ ] recebimento;
-- [ ] eventos;
-- [ ] testes.
+- [x] configuração;
+- [x] conexão;
+- [x] autenticação;
+- [x] envio;
+- [x] recebimento;
+- [x] eventos (leitura e presença online/offline);
+- [x] integração das páginas estáticas;
+- [x] testes.
 
 ### Fase 7 — FRONTEND
 
-- [ ] projeto Next.js;
-- [ ] login;
-- [ ] usuários;
-- [ ] lista de chats;
-- [ ] tela de conversa;
-- [ ] WebSocket.
+- [x] projeto Next.js;
+- [x] login;
+- [x] usuários;
+- [x] lista de chats;
+- [x] tela de conversa;
+- [x] WebSocket;
+- [x] grupos e edição/exclusão de mensagens;
+- [x] remoção das páginas estáticas.
+
+### Fase 9 — GRUPOS
+
+- [x] leitura por participante (`ChatParticipant` como entidade);
+- [x] tipo, nome e dono da conversa;
+- [x] criação de grupo;
+- [x] renomear, adicionar e remover participantes (somente o dono);
+- [x] sair do grupo, com transferência de posse e remoção do grupo vazio;
+- [x] eventos de conversa no WebSocket;
+- [x] testes.
+
+### Fase 10 — EDITAR E APAGAR MENSAGENS
+
+- [x] editar a própria mensagem (`edited_at`);
+- [x] apagar a própria mensagem (`deleted_at`, conteúdo esvaziado);
+- [x] eventos no WebSocket;
+- [x] testes.
 
 ### Fase 8 — DEPLOY
 
-- [ ] Docker;
+- [x] Docker (`Dockerfile` + serviço `app` no `compose.yaml`);
 - [ ] configuração de produção;
 - [ ] Google Cloud;
 - [ ] banco;
@@ -880,16 +1088,16 @@ Exemplo:
 
 O MVP será considerado concluído quando:
 
-- [ ] um usuário puder ser cadastrado;
-- [ ] um usuário puder realizar login;
-- [ ] endpoints protegidos exigirem autenticação;
-- [ ] dois usuários puderem iniciar uma conversa;
-- [ ] mensagens forem persistidas no PostgreSQL;
-- [ ] o histórico puder ser consultado;
-- [ ] mensagens puderem ser recebidas em tempo real;
-- [ ] o backend puder ser executado localmente;
-- [ ] o PostgreSQL puder ser iniciado via Docker Compose;
-- [ ] testes básicos estiverem funcionando.
+- [x] um usuário puder ser cadastrado;
+- [x] um usuário puder realizar login;
+- [x] endpoints protegidos exigirem autenticação;
+- [x] dois usuários puderem iniciar uma conversa;
+- [x] mensagens forem persistidas no PostgreSQL;
+- [x] o histórico puder ser consultado;
+- [x] mensagens puderem ser recebidas em tempo real;
+- [x] o backend puder ser executado localmente;
+- [x] o PostgreSQL puder ser iniciado via Docker Compose;
+- [x] testes básicos estiverem funcionando.
 
 ---
 
@@ -910,7 +1118,24 @@ O MVP será considerado concluído quando:
 
 ## 28. Estado atual
 
-Esta especificação representa a versão inicial do projeto.
+**MVP concluído.** Fases 1 a 6 implementadas — fundação, USER, AUTH com papéis (Módulo 0),
+conversas (Módulo 1), mensagens via REST (Módulo 2) e tempo real via WebSocket (Módulo 3) —
+mais o Módulo 4: `Dockerfile`, backend containerizado no `compose.yaml` e teste de ponta a
+ponta do fluxo mínimo. Todos os critérios do §26 estão atendidos.
+
+**Ampliação de escopo em andamento** (registrada aqui antes da implementação, conforme a
+regra desta seção): grupos (Fase 9), edição e exclusão de mensagens (Fase 10) e o frontend
+Next.js (Fase 7), que substituirá as páginas estáticas. A entrega é incremental, um módulo
+por vez: leitura por participante → grupos → editar/apagar → frontend Next.js.
+**Todas concluídas.** As páginas estáticas foram removidas; a interface agora é o projeto
+`frontend/`, cujo build é servido pelo próprio Spring Boot.
+
+O que permanece fora do escopo entregue, para eventual continuidade:
+
+- **Fase 8 — deploy na Google Cloud.** O `Dockerfile` e a configuração por variáveis de
+  ambiente já existem; faltam provisionar banco gerenciado, domínio/HTTPS e monitoramento.
+  Antes de escalar para mais de uma instância, ver a restrição do §22 sobre o broker em
+  memória.
 
 Alterações arquiteturais ou funcionais relevantes devem ser registradas nesta especificação antes de serem implementadas.
 

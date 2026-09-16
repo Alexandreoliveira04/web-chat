@@ -6,14 +6,17 @@ A fonte de verdade do projeto é a [WEB-CHAT-SPEC.md](../WEB-CHAT-SPEC.md). Este
 documentos detalham cada módulo e registram decisões tomadas durante a
 implementação; em caso de divergência, a spec prevalece.
 
+Para instalar, rodar e testar o projeto, ver o [README](../README.md).
+
 ## Módulos
 
 | Módulo | Responsabilidade | Fase | Situação |
 | ------ | ---------------- | ---- | -------- |
 | [shared](shared.md) | Configuração, tratamento de erros, health check | 1 | Implementado |
-| [user](user.md) | Colaboradores: cadastro, consulta, perfil, status | 2 | Implementado |
-| [auth](auth.md) | Login, JWT, Spring Security | 3 | Implementado |
-| [chat](chat.md) | Conversas, mensagens, histórico, WebSocket | 4–6 | Não iniciado |
+| [user](user.md) | Colaboradores: cadastro, consulta, perfil, status, papel | 2, 3.1 | Implementado |
+| [auth](auth.md) | Registro, login, JWT, Spring Security, autorização por papéis | 3, 3.1 | Implementado |
+| [chat](chat.md) | Conversas, grupos, mensagens, histórico, WebSocket | 4–6, 9–10 | Implementado |
+| [frontend](frontend.md) | Interface web em Next.js | 7 | Implementado |
 
 ## Convenções comuns
 
@@ -56,10 +59,11 @@ Todas as respostas de erro usam o formato único `ApiError`, descrito em
 ### Autenticação
 
 Salvo o que estiver listado como público em [auth](auth.md#endpoints), todo endpoint
-exige `Authorization: Bearer <token>`.
+exige `Authorization: Bearer <token>`. Algumas rotas exigem também o papel `ADMIN` — ver
+[auth](auth.md#autorização-por-papéis).
 
 ### Banco
 
 O schema é versionado exclusivamente por migrations Flyway em
-`src/main/resources/db/migration`. O Hibernate roda em `ddl-auto: validate` e nunca
+`backend/src/main/resources/db/migration`. O Hibernate roda em `ddl-auto: validate` e nunca
 altera o banco. Cada módulo cria as próprias migrations na sua fase.

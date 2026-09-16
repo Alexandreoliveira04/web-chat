@@ -11,14 +11,20 @@ Componentes de infraestrutura usados por todos os módulos. Deve conter apenas o
 
 ```text
 shared/
-├── config/       vazio nesta fase
+├── config/
+│   ├── PasswordEncoderConfig
+│   ├── CorsConfig
+│   └── StaticResourceConfig
 ├── controller/
 │   └── HealthController
 └── exception/
     ├── ApiError
+    ├── BadRequestException
     ├── ConflictException
+    ├── ForbiddenException
     ├── GlobalExceptionHandler
-    └── NotFoundException
+    ├── NotFoundException
+    └── UnauthorizedException
 ```
 
 ## Health check
@@ -43,8 +49,8 @@ Toda resposta de erro da API usa a mesma estrutura, definida em `ApiError`:
   "timestamp": "2026-09-09T02:04:36.733641600Z",
   "status": 404,
   "error": "Not Found",
-  "message": "Chat nao encontrado",
-  "path": "/api/v1/chats/9f1c..."
+  "message": "Conversa nao encontrada: 99",
+  "path": "/api/v1/chats/99"
 }
 ```
 
@@ -64,7 +70,11 @@ Toda resposta de erro da API usa a mesma estrutura, definida em `ApiError`:
 
 | Situação | Exceção | Status |
 | -------- | ------- | ------ |
-| Entrada inválida | `MethodArgumentNotValidException` | 400 |
+| Corpo inválido (`@Valid @RequestBody`) | `MethodArgumentNotValidException` | 400 |
+| Parâmetro inválido (`@RequestParam` com `@Min`, `@Max`, `@Positive`...) | `HandlerMethodValidationException` | 400 |
+| Regra de negócio rejeita a entrada | `BadRequestException` | 400 |
+| Credenciais inválidas | `UnauthorizedException` | 401 |
+| Operação proibida para o usuário autenticado | `ForbiddenException` | 403 |
 | Recurso inexistente | `NotFoundException` | 404 |
 | Conflito de estado | `ConflictException` | 409 |
 | Erros próprios do Spring MVC (rota inexistente, método não suportado, corpo malformado, ...) | tratadas por `ResponseEntityExceptionHandler` | status original |
@@ -82,7 +92,11 @@ devolve uma mensagem genérica, para não vazar detalhe interno ao cliente.
 ### Erros de validação
 
 Erros de Bean Validation retornam 400 com o mapa `fields`, um par por campo
-rejeitado:
+rejeitado. Vale tanto para o corpo da requisição quanto para parâmetros de query
+validados no controller — nesse caso a chave é o nome do parâmetro (ex.:
+`GET /chats/1/messages?size=0` → `"fields": { "size": "deve ser maior que ou igual à 1" }`).
+Os dois handlers (`handleMethodArgumentNotValid` e `handleHandlerMethodValidationException`)
+são sobrescritos para produzir o mesmo formato:
 
 ```json
 {
@@ -100,25 +114,43 @@ rejeitado:
 
 ### Exceções de negócio
 
-Apenas duas, sem hierarquia intermediária. Os services as lançam diretamente:
+Uma por status HTTP, sem hierarquia intermediária. Os services as lançam diretamente:
 
 ```java
-throw new NotFoundException("Usuario nao encontrado");
-throw new ConflictException("E-mail ja cadastrado");
+throw new BadRequestException("Nao e possivel iniciar uma conversa consigo mesmo"); // 400
+throw new UnauthorizedException("E-mail ou senha invalidos");       // 401
+throw new ForbiddenException("Nao e permitido alterar o proprio papel"); // 403
+throw new NotFoundException("Usuario nao encontrado");              // 404
+throw new ConflictException("E-mail ja cadastrado");                // 409
 ```
+
+`BadRequestException` cobre o 400 que o Bean Validation não consegue expressar, porque
+depende de estado (ex.: `participantId` igual ao próprio usuário autenticado). Ela não
+tem o mapa `fields`: a mensagem descreve a regra violada.
+
+`ForbiddenException` é para regras de negócio avaliadas no service (ex.: alterar o próprio
+papel, ou acessar uma conversa da qual não participa). Papel insuficiente para uma rota é
+barrado antes, pelo Spring Security, e também devolve 403 no mesmo formato — ver
+[auth](auth.md#erros).
 
 Novas exceções só devem ser criadas quando representarem um status HTTP que ainda
 não é coberto.
 
 ## `config/`
 
-Vazio nesta fase — nenhuma configuração compartilhada é necessária ainda. Destino
-previsto: `SecurityConfig` (fase 3) e a configuração de WebSocket (fase 6), caso não
-fiquem dentro dos respectivos módulos.
+- `PasswordEncoderConfig`: BCrypt, usado pelos módulos USER e AUTH.
+- `CorsConfig`: libera as origens de `CORS_ALLOWED_ORIGINS` em `/api/**`, com os métodos e os
+  cabeçalhos que o frontend usa. Em desenvolvimento o front roda em `:3000` e o backend em
+  `:8080`; no build servido pelo próprio Spring Boot, tudo fica na mesma origem e o CORS
+  nem entra em jogo.
+- `StaticResourceConfig`: serve o export do Next e resolve `/login` → `login.html`,
+  `/chat` → `chat.html`. Sem isso, os caminhos sem extensão do App Router dariam 404.
+
+O `SecurityConfig` ficou no módulo AUTH e a configuração de WebSocket, no módulo CHAT.
 
 ## Configuração da aplicação
 
-Definida em `src/main/resources/application.yml`, com valores lidos de variáveis de
+Definida em `backend/src/main/resources/application.yml`, com valores lidos de variáveis de
 ambiente. Os padrões correspondem ao `compose.yaml` e servem **apenas** para
 desenvolvimento local:
 
@@ -130,16 +162,22 @@ desenvolvimento local:
 | `DB_USER` | `webchat` |
 | `DB_PASSWORD` | `webchat` |
 | `SERVER_PORT` | `8080` |
-
-`JWT_SECRET` será acrescentada na fase 3, sem valor padrão.
+| `JWT_SECRET` | sem padrão — obrigatória |
+| `JWT_EXPIRATION` | `3600` |
+| `ADMIN_EMAIL` | vazio — nenhum admin inicial |
+| `ADMIN_PASSWORD` | vazio |
+| `ADMIN_NAME` | `Administrador` |
+| `WS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas no handshake WebSocket |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas nas chamadas REST |
 
 ### Perfis
 
 | Perfil | Arquivo | Uso |
 | ------ | ------- | --- |
 | (nenhum) | `application.yml` | Execução local contra o PostgreSQL do Docker |
-| `dev` | `application-dev.yml` | Acrescenta log de SQL e de web |
-| `test` | `src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
+| `dev` | `application-dev.yml` | Log de SQL e de web; `JWT_SECRET` e administrador descartáveis |
+| (nenhum, em container) | `compose.yaml`, profile `app` | Backend no Docker; as variáveis vêm do `environment` do serviço |
+| `test` | `backend/src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
 
 O perfil `test` existe para que `mvnw test` rode sem exigir Docker. A contrapartida é
 que os testes não validam SQL específico do PostgreSQL — quando as migrations reais
