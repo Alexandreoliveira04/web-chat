@@ -6,6 +6,7 @@ import br.edu.webchat.chat.dto.MessageResponse;
 import br.edu.webchat.chat.dto.ReadReceiptResponse;
 import br.edu.webchat.chat.dto.SendMessageRequest;
 import br.edu.webchat.chat.entity.Chat;
+import br.edu.webchat.chat.entity.ChatParticipant;
 import br.edu.webchat.chat.entity.Message;
 import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.user.entity.User;
@@ -15,7 +16,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -73,12 +73,19 @@ public class MessageService {
 	public MarkAsReadResponse markAsRead(Long chatId, String authenticatedEmail) {
 		User me = chatService.findAuthenticatedUser(authenticatedEmail);
 		Chat chat = chatService.findParticipantChat(chatId, me);
+		ChatParticipant participant = chat.participantOf(me.getId()).orElseThrow();
 
-		Instant readAt = Instant.now();
-		int marked = messageRepository.markAsRead(chatId, me.getId(), readAt);
+		Long lastMessageId = messageRepository.findLastMessageId(chatId);
+		if (lastMessageId == null || participant.hasRead(lastMessageId)) {
+			return new MarkAsReadResponse(0);
+		}
+
+		Long previous = participant.getLastReadMessageId();
+		int marked = messageRepository.countUnread(chatId, me.getId(), previous == null ? 0 : previous, lastMessageId);
+		participant.setLastReadMessage(messageRepository.getReferenceById(lastMessageId));
 
 		if (marked > 0) {
-			ReadReceiptResponse receipt = new ReadReceiptResponse(chatId, me.getId(), marked, readAt);
+			ReadReceiptResponse receipt = new ReadReceiptResponse(chatId, me.getId(), lastMessageId, marked);
 			events.publishEvent(new MessagesReadEvent(receipt, participantEmails(chat)));
 		}
 
@@ -86,7 +93,7 @@ public class MessageService {
 	}
 
 	private static List<String> participantEmails(Chat chat) {
-		return chat.getParticipants().stream().map(User::getEmail).sorted().toList();
+		return chat.users().stream().map(User::getEmail).sorted().toList();
 	}
 
 }

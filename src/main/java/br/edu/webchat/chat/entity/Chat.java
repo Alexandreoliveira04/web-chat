@@ -1,20 +1,21 @@
 package br.edu.webchat.chat.entity;
 
 import br.edu.webchat.user.entity.User;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Entity
@@ -28,12 +29,8 @@ public class Chat {
 	@Column(name = "direct_key", nullable = false, unique = true, updatable = false, length = 40)
 	private String directKey;
 
-	@ManyToMany
-	@JoinTable(
-			name = "chat_participants",
-			joinColumns = @JoinColumn(name = "chat_id"),
-			inverseJoinColumns = @JoinColumn(name = "user_id"))
-	private Set<User> participants = new HashSet<>();
+	@OneToMany(mappedBy = "chat", cascade = CascadeType.ALL, orphanRemoval = true)
+	private Set<ChatParticipant> participants = new HashSet<>();
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
@@ -45,8 +42,8 @@ public class Chat {
 
 	public Chat(User first, User second) {
 		this.directKey = directKeyOf(first.getId(), second.getId());
-		this.participants.add(first);
-		this.participants.add(second);
+		this.participants.add(new ChatParticipant(this, first));
+		this.participants.add(new ChatParticipant(this, second));
 	}
 
 	public static String directKeyOf(Long userId, Long otherUserId) {
@@ -70,7 +67,38 @@ public class Chat {
 	}
 
 	public boolean hasParticipant(Long userId) {
-		return participants.stream().anyMatch(user -> user.getId().equals(userId));
+		return participantOf(userId).isPresent();
+	}
+
+	public Optional<ChatParticipant> participantOf(Long userId) {
+		return participants.stream()
+				.filter(participant -> participant.getUser().getId().equals(userId))
+				.findFirst();
+	}
+
+	public List<User> users() {
+		return participants.stream().map(ChatParticipant::getUser).toList();
+	}
+
+	/**
+	 * Menor marcador de leitura entre os outros participantes: mensagens ate esse id foram
+	 * lidas por todos eles. Nulo quando algum ainda nao leu nada ou nao ha outro participante.
+	 */
+	public Long lastReadByOthers(Long userId) {
+		Long minimum = null;
+
+		for (ChatParticipant participant : participants) {
+			if (participant.getUser().getId().equals(userId)) {
+				continue;
+			}
+			Long lastRead = participant.getLastReadMessageId();
+			if (lastRead == null) {
+				return null;
+			}
+			minimum = minimum == null ? lastRead : Math.min(minimum, lastRead);
+		}
+
+		return minimum;
 	}
 
 	public Long getId() {
@@ -81,7 +109,7 @@ public class Chat {
 		return directKey;
 	}
 
-	public Set<User> getParticipants() {
+	public Set<ChatParticipant> getParticipants() {
 		return participants;
 	}
 

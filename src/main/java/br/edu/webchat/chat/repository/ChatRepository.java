@@ -11,21 +11,22 @@ import java.util.Optional;
 
 public interface ChatRepository extends JpaRepository<Chat, Long> {
 
-	@EntityGraph(attributePaths = "participants")
+	@EntityGraph(attributePaths = {"participants", "participants.user"})
 	Optional<Chat> findByDirectKey(String directKey);
 
 	@Query("""
 			select c from Chat c
-			join fetch c.participants
+			join fetch c.participants p
+			join fetch p.user
 			where c.id in (
 				select c2.id from Chat c2
-				join c2.participants p
-				where p.id = :userId)
+				join c2.participants p2
+				where p2.user.id = :userId)
 			order by c.updatedAt desc, c.id desc
 			""")
 	List<Chat> findAllByParticipantId(@Param("userId") Long userId);
 
-	@EntityGraph(attributePaths = "participants")
+	@EntityGraph(attributePaths = {"participants", "participants.user"})
 	Optional<Chat> findWithParticipantsById(Long id);
 
 }

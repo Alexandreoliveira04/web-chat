@@ -9,8 +9,7 @@ public record MessageResponse(
 		Long chatId,
 		Long senderId,
 		String content,
-		Instant createdAt,
-		Instant readAt
+		Instant createdAt
 ) {
 
 	public static MessageResponse from(Message message) {
@@ -19,8 +18,7 @@ public record MessageResponse(
 				message.getChat().getId(),
 				message.getSender().getId(),
 				message.getContent(),
-				message.getCreatedAt(),
-				message.getReadAt());
+				message.getCreatedAt());
 	}
 
 }

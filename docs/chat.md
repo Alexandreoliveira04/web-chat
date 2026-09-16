@@ -1,8 +1,9 @@
 # Módulo `chat`
 
 **Pacote:** `br.edu.webchat.chat`
-**Fases:** 4 (conversas), 5 (mensagens), 6 (WebSocket)
-**Situação:** implementado (conversas, mensagens via REST e tempo real via WebSocket)
+**Fases:** 4 (conversas), 5 (mensagens), 6 (WebSocket), 9 (grupos), 10 (editar/apagar)
+**Situação:** conversas individuais, mensagens, tempo real e leitura por participante
+implementados; grupos (Fase 9) e edição/exclusão (Fase 10) em andamento
 
 Responsável pelas conversas, participantes, mensagens, histórico e comunicação em
 tempo real.
@@ -15,17 +16,18 @@ chat/
 ├── dto/          CreateChatRequest, CreateChatResult, ChatResponse, ParticipantResponse,
 │                 SendMessageRequest, MessageResponse, MessageHistoryResponse, MarkAsReadResponse,
 │                 ReadReceiptResponse, PresenceResponse
-├── entity/       Chat, Message
+├── entity/       Chat, ChatParticipant, ChatParticipantId, Message
 ├── repository/   ChatRepository, MessageRepository
-├── service/      ChatService, MessageService, MessageSentEvent, MessagesReadEvent
+├── service/      ChatService, ChatCreator, MessageService, MessageSentEvent, MessagesReadEvent
 └── websocket/    WebSocketConfig, StompAuthInterceptor, ChatWebSocketController,
                   ChatEventBroadcaster, PresenceService
 ```
 
 ## Escopo
 
-O MVP tem **apenas conversas individuais** — dois participantes. Grupos, envio de
-arquivos, edição e exclusão de mensagens, respostas e reações estão fora do escopo.
+O MVP entregue tem **apenas conversas individuais** — dois participantes. Grupos e
+edição/exclusão de mensagens entraram na ampliação de escopo (fases 9 e 10) e estão sendo
+implementados. Envio de arquivos, respostas e reações seguem fora do escopo.
 
 ## Modelo de dados
 
@@ -38,12 +40,14 @@ arquivos, edição e exclusão de mensagens, respostas e reações estão fora d
 | `created_at` | `TIMESTAMPTZ` | preenchido no `@PrePersist` |
 | `updated_at` | `TIMESTAMPTZ` | última atividade: atualizado a cada mensagem enviada; ordena a listagem |
 
-### `chat_participants` — `V5__create_chat_participants.sql`
+### `chat_participants` — `V5__create_chat_participants.sql` + `V8__add_read_state_to_participants.sql`
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
 | `chat_id` | `BIGINT` | FK → `chats.id`, `ON DELETE CASCADE` |
 | `user_id` | `BIGINT` | FK → `users.id` |
+| `last_read_message_id` | `BIGINT` | FK → `messages.id`, `ON DELETE SET NULL`; última mensagem lida **por este participante** |
+| `joined_at` | `TIMESTAMPTZ` | quando entrou na conversa |
 
 ### `messages` — `V7__create_messages.sql`
 
@@ -54,7 +58,6 @@ arquivos, edição e exclusão de mensagens, respostas e reações estão fora d
 | `sender_id` | `BIGINT` | FK → `users.id` |
 | `content` | `VARCHAR(2000)` | `NOT NULL`, `CHECK (length(trim(content)) > 0)` |
 | `created_at` | `TIMESTAMPTZ` | preenchido no `@PrePersist` |
-| `read_at` | `TIMESTAMPTZ` | nulo enquanto o destinatário não marcar como lida |
 
 Restrições e índices:
 
@@ -72,17 +75,26 @@ Restrições e índices:
 ## Mapeamento JPA
 
 ```text
-Chat ──@ManyToMany──> User      (tabela de junção: chat_participants)
+Chat ──@OneToMany(orphanRemoval)──> ChatParticipant ──@ManyToOne──> User
+ChatParticipant ──@ManyToOne(LAZY)──> Message   (última lida por aquele participante)
 Message ──@ManyToOne(LAZY)──> Chat
-Message ──@ManyToOne(LAZY)──> User   (sender)
+Message ──@ManyToOne(LAZY)──> User              (remetente)
 ```
 
-`Chat.participants` é um `Set<User>` mapeado com `@ManyToMany` + `@JoinTable`.
+`ChatParticipant` usa chave composta `(chat, user)` via `@IdClass(ChatParticipantId)`, com as
+duas pontas mapeadas como `@Id @ManyToOne` — o mesmo par que é a PK da tabela.
 
-> **Decisão:** a spec original citava uma entidade `ChatParticipant`. Como
-> `chat_participants` só tem as duas chaves, sem nenhuma coluna própria, uma entidade
-> separada seria abstração sem ganho. Se a tabela ganhar colunas (ex.: "entrou em",
-> "silenciada"), o mapeamento passa a ser uma entidade própria — o schema não muda.
+> **Decisão da Fase 9 (substitui a da Fase 4).** Até a Fase 6, `chat_participants` era só uma
+> tabela de junção (`@ManyToMany`), porque não tinha colunas próprias. Ela passou a ter
+> estado de leitura por participante (ver [leitura](#leitura-por-participante)) e virou
+> entidade, como a spec original previa.
+
+**Consequência do mapeamento.** Como o `User` faz parte da chave do `ChatParticipant`, o
+Hibernate exige que ele esteja gerenciado na transação em que a conversa é gravada — com uma
+entidade destacada, `persist` falha. Por isso a gravação ficou isolada no componente
+`ChatCreator`, que é `@Transactional`, carrega os usuários por referência e salva; o
+`ChatService.create` continua fora de transação para conseguir tratar a corrida
+(ver [concorrência](#concorrência-na-criação-de-conversa)).
 
 A regra "exatamente dois participantes" é garantida pelo único construtor público,
 `new Chat(User, User)`, e pela validação no service; não há API para adicionar ou
@@ -90,8 +102,7 @@ remover participantes. O construtor também calcula o `directKey` com
 `Chat.directKeyOf(id1, id2)`, que ordena os ids (`directKeyOf(4, 3)` = `"3:4"`).
 
 `Message` não tem setters: conteúdo, conversa e remetente são `updatable = false` (edição
-está fora do escopo). O único campo que muda é `read_at`, e só por `update` em lote no
-repository. As associações são `LAZY`; `MessageResponse` usa apenas `getChat().getId()` e
+está fora do escopo). As associações são `LAZY`; `MessageResponse` usa apenas `getChat().getId()` e
 `getSender().getId()`, que o Hibernate resolve pela FK sem carregar a conversa ou o usuário.
 
 ### Por que `direct_key`
@@ -101,10 +112,10 @@ não impede duas conversas diferentes para o mesmo par. Com `direct_key UNIQUE`,
 unicidade do par passa a ser uma regra do banco, e a busca da conversa existente vira uma
 consulta simples por chave.
 
-Campos avaliados e **não** adicionados: `status`/`type` (sem moderação nem grupos no
-escopo), `created_by` (pouco uso), estado por participante como arquivar ou silenciar
-(fora do MVP), `last_message_at`/`last_message_preview` denormalizados (ver
-[listagem](#listar-minhas-conversas)).
+Campos avaliados e **não** adicionados: `created_by` fora de grupo (pouco uso), estado por
+participante como arquivar ou silenciar (fora do escopo),
+`last_message_at`/`last_message_preview` denormalizados (ver
+[listagem](#listar-minhas-conversas)). `type` e `name` entram na Fase 9, com os grupos.
 
 ## API REST
 
@@ -134,10 +145,10 @@ recebem `chatId` exigem que o usuário **participe** da conversa — inclusive `
     "chatId": 1,
     "senderId": 2,
     "content": "tudo sim!",
-    "createdAt": "2026-09-15T01:45:20.398334Z",
-    "readAt": null
+    "createdAt": "2026-09-15T01:45:20.398334Z"
   },
   "unreadCount": 3,
+  "lastReadByOthersMessageId": 41,
   "createdAt": "2026-09-15T01:17:32.953471Z",
   "updatedAt": "2026-09-15T01:45:20.401122Z"
 }
@@ -145,8 +156,11 @@ recebem `chatId` exigem que o usuário **participe** da conversa — inclusive `
 
 - `participants` vem ordenado por `id` e expõe só `id`, `name`, `email` e `status`.
 - `lastMessage` é `null` em conversa sem mensagens.
-- `unreadCount` conta as mensagens **do outro participante** com `readAt` nulo — é
-  relativo a quem pergunta.
+- `unreadCount` conta as mensagens **dos outros participantes** ainda não lidas por quem
+  pergunta, segundo o marcador dele.
+- `lastReadByOthersMessageId` é o menor marcador entre os outros participantes: mensagens até
+  esse id foram lidas por todos eles, e é isso que o front usa para mostrar ✓✓. Nulo quando
+  alguém ainda não leu nada.
 
 ### Iniciar conversa
 
@@ -208,8 +222,7 @@ Content-Type: application/json
   "chatId": 1,
   "senderId": 1,
   "content": "oi Maria",
-  "createdAt": "2026-09-15T01:45:20.398334Z",
-  "readAt": null
+  "createdAt": "2026-09-15T01:45:20.398334Z"
 }
 ```
 
@@ -264,9 +277,25 @@ Authorization: Bearer <token>
 { "markedAsRead": 3 }
 ```
 
-Preenche `read_at` de todas as mensagens **recebidas** (enviadas pelo outro participante)
-ainda não lidas, com um único `update` em lote. Mensagens do próprio usuário nunca são
-afetadas. Chamar de novo devolve `0` — a operação é idempotente.
+Avança o marcador `last_read_message_id` **do participante que chamou** até a última mensagem
+da conversa e devolve quantas mensagens recebidas entraram nessa faixa. Mensagens do próprio
+usuário nunca contam. Chamar de novo devolve `0` — a operação é idempotente.
+
+### Leitura por participante
+
+Cada participante guarda o próprio marcador em `chat_participants.last_read_message_id`, e não
+existe campo de leitura na mensagem:
+
+- `unreadCount` = mensagens da conversa com `id` maior que o marcador de quem pergunta e
+  remetente diferente dele;
+- ✓✓ = `lastReadByOthersMessageId` da conversa (o menor marcador entre os outros);
+- ler de novo não muda nada: o marcador só avança.
+
+> **Decisão da Fase 9.** Antes, a leitura era um `read_at` na própria mensagem. Isso funciona
+> em conversa de duas pessoas, mas quebra em grupo: o primeiro que abrisse a conversa
+> preencheria `read_at` e zeraria o contador de todo mundo. A migration `V8` converteu o
+> estado existente — para cada participante, a última mensagem recebida que estava marcada
+> como lida virou o seu marcador — e removeu `messages.read_at`.
 
 > **Decisão: endpoint explícito.** O front chama ao abrir a conversa. O `GET` do histórico
 > continua sem efeito colateral, o que permite, por exemplo, pré-carregar mensagens sem
@@ -298,19 +327,21 @@ de visibilidade de pacote), para que a regra de acesso fique em um único lugar.
 `ChatService.create`:
 
 1. busca a conversa por `findByDirectKey` — se existe, devolve com `created = false`;
-2. senão, `saveAndFlush(new Chat(me, other))`;
-3. se o `INSERT` violar `uk_chats_direct_key` (outra requisição criou no intervalo), captura
-   a `DataIntegrityViolationException`, busca de novo por `findByDirectKey` e devolve a
-   conversa com `created = false`;
-4. se a nova busca não encontrar nada, a violação era outra (ex.: FK de usuário removido) e
-   a exceção é propagada.
+2. senão, chama `ChatCreator.createDirect`, que grava a conversa na própria transação;
+3. se o `INSERT` violar `uk_chats_direct_key` (outra requisição criou no intervalo), a
+   `DataIntegrityViolationException` é capturada e a criação passa a valer como
+   reaproveitamento (`created = false`);
+4. em seguida busca a conversa de novo por `findByDirectKey` e monta a resposta a partir
+   dela — assim os participantes vêm carregados, independentemente de quem criou;
+5. se essa busca não encontrar nada e houve violação, ela era outra (ex.: FK de usuário
+   removido) e a exceção é propagada.
 
 **`create` não é `@Transactional` de propósito.** Dentro de uma transação, a violação de
 constraint a marca como *rollback-only* e a sessão do Hibernate fica inutilizável, então a
-nova busca do passo 3 não poderia acontecer. Sem a anotação, cada chamada de repository
-roda na própria transação: o `saveAndFlush` falha e é revertido sozinho, e a busca seguinte
-abre uma transação limpa. Nenhuma escrita parcial é possível — o único `INSERT` é o do
-passo 2, e ele é atômico (conversa + participantes).
+busca do passo 4 não poderia acontecer. Sem a anotação, cada chamada roda na própria
+transação: a gravação do `ChatCreator` falha e é revertida sozinha, e a busca seguinte abre
+uma transação limpa. Nenhuma escrita parcial é possível — o único `INSERT` é o do passo 2, e
+ele é atômico (conversa + participantes).
 
 Verificado contra o PostgreSQL com 10 `POST /chats` simultâneos para o mesmo par (5 de
 cada lado): 1 resposta `201`, 9 respostas `200`, uma única linha em `chats`, nenhum `500`.
@@ -321,12 +352,12 @@ são esperadas.
 
 | Operação | Consultas | Queries |
 | -------- | --------- | ------- |
-| Listar conversas | `findAllByParticipantId` (`join fetch participants` + subconsulta) → `findLastMessagesOfChats` (`max(id)` agrupado por conversa) → `countUnreadByChat` (`count` agrupado) | **3**, independente do número de conversas |
+| Listar conversas | `findAllByParticipantId` (`join fetch participants` + `join fetch p.user` + subconsulta) → `findLastMessagesOfChats` (`max(id)` agrupado por conversa) → `countUnreadByChat` (`count` agrupado, já comparando com o marcador de cada participante) | **3**, independente do número de conversas |
 | Consultar conversa | `findWithParticipantsById` (`@EntityGraph`) + as mesmas 2 de mensagens | 3 |
 | Procurar conversa existente | `findByDirectKey` (índice único + `@EntityGraph`) | 1 |
 | Histórico | checagem de participante + `findLatest`/`findBefore` com limite `size + 1` | 2 |
 | Enviar | checagem + `INSERT` em `messages` + `UPDATE` de `chats.updated_at` | 3 |
-| Marcar como lidas | checagem + um `UPDATE` em lote | 2 |
+| Marcar como lidas | checagem + `max(id)` da conversa + contagem da faixa + `UPDATE` do marcador | 4 |
 
 Somam-se a cada requisição as buscas do usuário autenticado (uma no filtro JWT, outra no
 service).
@@ -387,9 +418,9 @@ backend, para que um envio por WebSocket não perca o texto por erro de validaç
 | `ChatControllerTest` | `@WebMvcTest` | 201 + `Location` × 200, validação, 400/403/404, formato com `lastMessage` e `unreadCount` |
 | `MessageControllerTest` | `@WebMvcTest` | 201, conteúdo em branco/longo (400), 403, `size` padrão 50, `size`/`before` inválidos (400 com `fields`), `PATCH read` |
 | `ChatRepositoryTest` | `@DataJpaTest` (H2) | persistência e `direct_key`, busca por chave, `UNIQUE`, listagem e ordenação |
-| `MessageRepositoryTest` | `@DataJpaTest` (H2) | persistência, histórico por cursor, última mensagem por conversa, não lidas só do outro participante, `markAsRead` idempotente |
+| `MessageRepositoryTest` | `@DataJpaTest` (H2) | persistência, histórico por cursor, última mensagem por conversa, não lidas só dos outros, marcador de um participante não afeta o outro |
 | `ChatIntegrationTest` | `@SpringBootTest` | cadeia real das conversas: 401, criar → reaproveitar → listar, 403, 404, 400 |
-| `MessageIntegrationTest` | `@SpringBootTest` | cadeia real: 401, fluxo envio → listagem com não lidas → histórico → leitura → `readAt`, cursor sem repetição com mensagem nova no meio, conversa sobe na lista, 403 nos 3 endpoints, 400/404 |
+| `MessageIntegrationTest` | `@SpringBootTest` | cadeia real: 401, fluxo envio → listagem com não lidas → histórico → leitura → ✓✓, leitura de um participante não zera a do outro, cursor sem repetição com mensagem nova no meio, conversa sobe na lista, 403 nos 3 endpoints, 400/404 |
 | `RealtimeIntegrationTest` | `@SpringBootTest(RANDOM_PORT)` + cliente STOMP real | conexão sem token/inválida recusada; `POST` REST entrega aos dois participantes e não a terceiros; envio por STOMP persiste e entrega; erro 403/400 só para quem enviou e nada é gravado; recibo de leitura; presença `ONLINE`/`OFFLINE` e status no banco |
 
 `RealtimeIntegrationTest` espera cada assinatura aparecer no `SimpUserRegistry` antes de
@@ -461,10 +492,10 @@ O interceptor também restringe os frames seguintes:
 
 ```json
 // /user/queue/messages
-{ "id": 42, "chatId": 1, "senderId": 3, "content": "oi", "createdAt": "2026-09-15T02:04:17.1Z", "readAt": null }
+{ "id": 42, "chatId": 1, "senderId": 3, "content": "oi", "createdAt": "2026-09-15T02:04:17.1Z" }
 
 // /user/queue/read
-{ "chatId": 1, "readerId": 4, "markedAsRead": 3, "readAt": "2026-09-15T02:04:17.909643Z" }
+{ "chatId": 1, "readerId": 4, "lastReadMessageId": 42, "markedAsRead": 3 }
 
 // /user/queue/errors
 { "timestamp": "...", "status": 403, "error": "Forbidden",
@@ -543,5 +574,5 @@ terceiros, 403 em `/user/queue/errors` para não participante, recibo de leitura
   aberta continua ativa depois que o token expira, até ser encerrada. Na próxima reconexão o
   token expirado é recusado.
 - **Sem paginação** em `GET /chats`, como em `GET /users`.
-- **`readAt` é por conversa, não por mensagem**: `PATCH .../read` marca todas as recebidas de
-  uma vez. Suficiente para conversas 1:1; não há "marcar só até a mensagem X".
+- **A leitura é até a última mensagem**: `PATCH .../read` sempre avança o marcador até o fim
+  da conversa; não há "marcar só até a mensagem X".

@@ -49,6 +49,9 @@ class MessageServiceTest {
 	private UserRepository userRepository;
 
 	@Mock
+	private ChatCreator chatCreator;
+
+	@Mock
 	private ApplicationEventPublisher events;
 
 	private MessageService messageService;
@@ -61,7 +64,7 @@ class MessageServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository);
+		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator);
 		messageService = new MessageService(chatService, messageRepository, events);
 
 		conversa = new Chat(alexandre, maria);
@@ -86,7 +89,6 @@ class MessageServiceTest {
 		assertThat(response.content()).isEqualTo("oi Maria");
 		assertThat(response.senderId()).isEqualTo(1L);
 		assertThat(response.chatId()).isEqualTo(10L);
-		assertThat(response.readAt()).isNull();
 	}
 
 	@Test
@@ -202,31 +204,48 @@ class MessageServiceTest {
 	// ---------- leitura ----------
 
 	@Test
-	void marcarComoLidaDeveAfetarSomenteMensagensDoOutroParticipante() {
+	void marcarComoLidaAvancaOMarcadorDoParticipanteEAvisaOsOutros() {
 		logado(maria);
 		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
-		when(messageRepository.markAsRead(eq(10L), eq(2L), any(Instant.class))).thenReturn(3);
+		when(messageRepository.findLastMessageId(10L)).thenReturn(50L);
+		when(messageRepository.countUnread(10L, 2L, 0, 50L)).thenReturn(3);
+		when(messageRepository.getReferenceById(50L)).thenReturn(comId(new Message(conversa, alexandre, "ultima"), 50L));
 
 		assertThat(messageService.markAsRead(10L, "maria@email.com").markedAsRead()).isEqualTo(3);
+		assertThat(conversa.participantOf(2L).orElseThrow().getLastReadMessageId()).isEqualTo(50L);
 
 		ArgumentCaptor<MessagesReadEvent> event = ArgumentCaptor.forClass(MessagesReadEvent.class);
 		verify(events).publishEvent(event.capture());
 		assertThat(event.getValue().receipt().chatId()).isEqualTo(10L);
 		assertThat(event.getValue().receipt().readerId()).isEqualTo(2L);
+		assertThat(event.getValue().receipt().lastReadMessageId()).isEqualTo(50L);
 		assertThat(event.getValue().receipt().markedAsRead()).isEqualTo(3);
-		assertThat(event.getValue().receipt().readAt()).isNotNull();
 		assertThat(event.getValue().recipientEmails()).containsExactly("alexandre@email.com", "maria@email.com");
 	}
 
 	@Test
-	void marcarComoLidaSemNadaPendenteNaoPublicaEvento() {
+	void marcarComoLidaEmConversaSemMensagensNaoFazNada() {
 		logado(maria);
 		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
-		when(messageRepository.markAsRead(eq(10L), eq(2L), any(Instant.class))).thenReturn(0);
+		when(messageRepository.findLastMessageId(10L)).thenReturn(null);
 
 		assertThat(messageService.markAsRead(10L, "maria@email.com").markedAsRead()).isZero();
 
 		verifyNoInteractions(events);
+	}
+
+	@Test
+	void marcarComoLidaDeNovoNaoRepeteOEvento() {
+		logado(maria);
+		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
+		when(messageRepository.findLastMessageId(10L)).thenReturn(50L);
+		conversa.participantOf(2L).orElseThrow()
+				.setLastReadMessage(comId(new Message(conversa, alexandre, "ultima"), 50L));
+
+		assertThat(messageService.markAsRead(10L, "maria@email.com").markedAsRead()).isZero();
+
+		verifyNoInteractions(events);
+		verify(messageRepository, never()).countUnread(anyLong(), anyLong(), anyLong(), anyLong());
 	}
 
 	@Test
@@ -237,7 +256,7 @@ class MessageServiceTest {
 		assertThatThrownBy(() -> messageService.markAsRead(10L, "joao@email.com"))
 				.isInstanceOf(ForbiddenException.class);
 
-		verify(messageRepository, never()).markAsRead(anyLong(), anyLong(), any());
+		verify(messageRepository, never()).countUnread(anyLong(), anyLong(), anyLong(), anyLong());
 	}
 
 	private void logado(User user) {

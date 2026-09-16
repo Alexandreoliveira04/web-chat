@@ -104,8 +104,8 @@ function handleReadReceipt(receipt) {
         return;
     }
 
-    if (chat?.lastMessage?.senderId === currentUser.id) {
-        chat.lastMessage.readAt = receipt.readAt;
+    if (chat) {
+        chat.lastReadByOthersMessageId = receipt.lastReadMessageId;
     }
 
     if (activeChat?.id === receipt.chatId) {
@@ -308,8 +308,9 @@ function buildMessage(message) {
 
     const time = element('span', 'message-time', formatTime(message.createdAt) + ' ');
     if (sent) {
-        const check = element('i', message.readAt ? 'fa-solid fa-check-double' : 'fa-solid fa-check');
-        check.title = message.readAt ? 'Lida' : 'Enviada';
+        const lida = activeChat?.lastReadByOthersMessageId >= message.id;
+        const check = element('i', lida ? 'fa-solid fa-check-double' : 'fa-solid fa-check');
+        check.title = lida ? 'Lida' : 'Enviada';
         time.appendChild(check);
     }
     bubble.appendChild(time);

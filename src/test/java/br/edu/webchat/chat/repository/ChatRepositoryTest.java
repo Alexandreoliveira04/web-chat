@@ -55,9 +55,14 @@ class ChatRepositoryTest {
 		assertThat(recarregado.getCreatedAt()).isNotNull();
 		assertThat(recarregado.getUpdatedAt()).isNotNull();
 		assertThat(Hibernate.isInitialized(recarregado.getParticipants())).isTrue();
-		assertThat(recarregado.getParticipants())
+		assertThat(recarregado.users())
 				.extracting(User::getEmail)
 				.containsExactlyInAnyOrder("alexandre@email.com", "maria@email.com");
+		assertThat(recarregado.getParticipants())
+				.allSatisfy(participant -> {
+					assertThat(participant.getJoinedAt()).isNotNull();
+					assertThat(participant.getLastReadMessageId()).isNull();
+				});
 	}
 
 	@Test

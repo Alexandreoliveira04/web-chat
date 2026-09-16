@@ -28,12 +28,14 @@ public class ChatService {
 	private final ChatRepository chatRepository;
 	private final MessageRepository messageRepository;
 	private final UserRepository userRepository;
+	private final ChatCreator chatCreator;
 
 	public ChatService(ChatRepository chatRepository, MessageRepository messageRepository,
-			UserRepository userRepository) {
+			UserRepository userRepository, ChatCreator chatCreator) {
 		this.chatRepository = chatRepository;
 		this.messageRepository = messageRepository;
 		this.userRepository = userRepository;
+		this.chatCreator = chatCreator;
 	}
 
 	public CreateChatResult create(String authenticatedEmail, CreateChatRequest request) {
@@ -53,15 +55,20 @@ public class ChatService {
 			return new CreateChatResult(toResponse(existing.get(), me), false);
 		}
 
+		DataIntegrityViolationException conflict = null;
 		try {
-			Chat created = chatRepository.saveAndFlush(new Chat(me, other));
-			return new CreateChatResult(ChatResponse.from(created, null, 0), true);
+			chatCreator.createDirect(me.getId(), other.getId());
 		}
 		catch (DataIntegrityViolationException ex) {
-			return chatRepository.findByDirectKey(directKey)
-					.map(createdMeanwhile -> new CreateChatResult(toResponse(createdMeanwhile, me), false))
-					.orElseThrow(() -> ex);
+			conflict = ex;
 		}
+
+		Optional<Chat> chat = chatRepository.findByDirectKey(directKey);
+		if (chat.isEmpty()) {
+			throw conflict == null ? new IllegalStateException("Conversa nao encontrada apos a criacao") : conflict;
+		}
+
+		return new CreateChatResult(toResponse(chat.get(), me), conflict == null);
 	}
 
 	@Transactional(readOnly = true)
@@ -92,7 +99,7 @@ public class ChatService {
 				.orElseThrow(() -> new NotFoundException("Usuario nao encontrado: " + email));
 	}
 
-	private ChatResponse toResponse(Chat chat, User me) {
+	ChatResponse toResponse(Chat chat, User me) {
 		return toResponses(List.of(chat), me).get(0);
 	}
 
@@ -110,7 +117,7 @@ public class ChatService {
 				.collect(Collectors.toMap(MessageRepository.UnreadCount::getChatId, MessageRepository.UnreadCount::getTotal));
 
 		return chats.stream()
-				.map(chat -> ChatResponse.from(chat, lastMessages.get(chat.getId()),
+				.map(chat -> ChatResponse.from(chat, me.getId(), lastMessages.get(chat.getId()),
 						unreadCounts.getOrDefault(chat.getId(), 0L)))
 				.toList();
 	}

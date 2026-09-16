@@ -38,9 +38,6 @@ public class Message {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	@Column(name = "read_at")
-	private Instant readAt;
-
 	protected Message() {}
 
 	public Message(Chat chat, User sender, String content) {
@@ -72,10 +69,6 @@ public class Message {
 
 	public Instant getCreatedAt() {
 		return createdAt;
-	}
-
-	public Instant getReadAt() {
-		return readAt;
 	}
 
 }

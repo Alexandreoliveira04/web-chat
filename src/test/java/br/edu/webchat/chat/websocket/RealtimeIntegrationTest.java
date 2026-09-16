@@ -200,7 +200,7 @@ class RealtimeIntegrationTest {
 		assertThat(recibo.chatId()).isEqualTo(chatId);
 		assertThat(recibo.readerId()).isEqualTo(mariaId);
 		assertThat(recibo.markedAsRead()).isEqualTo(1);
-		assertThat(recibo.readAt()).isBefore(Instant.now().plusSeconds(1));
+		assertThat(recibo.lastReadMessageId()).isNotNull();
 	}
 
 	@Test

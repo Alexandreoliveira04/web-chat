@@ -71,9 +71,13 @@ O sistema deverá permitir:
 - iniciar uma conversa individual;
 - listar as conversas do usuário autenticado;
 - consultar os participantes de uma conversa;
-- consultar o histórico de mensagens.
+- consultar o histórico de mensagens;
+- criar conversas em grupo, com nome e vários participantes;
+- renomear o grupo, adicionar e remover participantes (somente quem criou);
+- sair de um grupo.
 
-O MVP não terá grupos.
+O MVP entregue (fases 1–6) teve apenas conversas individuais; os grupos entraram na
+ampliação de escopo da Fase 9.
 
 ### 3.4 Mensagens
 
@@ -85,7 +89,9 @@ O sistema deverá permitir:
 - consultar histórico;
 - identificar remetente;
 - armazenar data/hora;
-- marcar mensagens como lidas.
+- marcar mensagens como lidas, de forma independente para cada participante;
+- editar a própria mensagem;
+- apagar a própria mensagem.
 
 ---
 
@@ -93,13 +99,10 @@ O sistema deverá permitir:
 
 Os seguintes recursos não fazem parte do MVP:
 
-- grupos;
 - chamadas de áudio;
 - chamadas de vídeo;
 - envio de arquivos;
 - envio de imagens;
-- edição de mensagens;
-- exclusão de mensagens;
 - respostas/threads;
 - reações;
 - busca avançada;
@@ -115,6 +118,10 @@ Os seguintes recursos não fazem parte do MVP:
 - DDD complexo.
 
 Esses recursos poderão ser adicionados posteriormente caso sejam necessários.
+
+**Ampliação de escopo (pós-MVP).** Grupos, edição e exclusão de mensagens saíram desta
+lista e passaram a fazer parte do escopo, junto com o frontend Next.js da Fase 7. As fases
+9 e 10 detalham o que muda.
 
 ---
 
@@ -422,16 +429,23 @@ Regras:
 ```text
 chat_id
 user_id
+last_read_message_id
+joined_at
 ```
 
 Regras:
 
-- um chat individual possui exatamente dois participantes;
+- um chat individual possui exatamente dois participantes; um grupo possui de um a cinquenta;
 - um usuário não pode participar duas vezes da mesma conversa (chave primária composta `(chat_id, user_id)`);
-- entre o mesmo par de usuários existe uma única conversa (`chats.direct_key` único): uma nova tentativa, inclusive simultânea, reaproveita a existente.
+- entre o mesmo par de usuários existe uma única conversa (`chats.direct_key` único): uma nova tentativa, inclusive simultânea, reaproveita a existente;
+- `last_read_message_id` é a última mensagem lida por **aquele** participante; nulo enquanto ele não leu nada.
 
-Decisão da Fase 4: `chat_participants` é mapeada como tabela de junção (`@ManyToMany` em
-`Chat`), sem entidade `ChatParticipant`, porque não possui colunas próprias.
+> **Decisão da Fase 9 (substitui a decisão da Fase 4).** Até a Fase 6, `chat_participants`
+> era apenas uma tabela de junção (`@ManyToMany`), sem colunas próprias, e a leitura ficava
+> em `messages.read_at`. Isso não funciona em grupo: o primeiro participante que abrisse a
+> conversa marcaria as mensagens como lidas para todos, zerando o contador dos demais.
+> Com a leitura por participante, `chat_participants` passou a ter colunas próprias e virou
+> a entidade `ChatParticipant`, como a versão original desta spec previa.
 
 ### messages
 
@@ -441,7 +455,8 @@ chat_id
 sender_id
 content
 created_at
-read_at
+edited_at
+deleted_at
 ```
 
 Regras:
@@ -452,8 +467,10 @@ Regras:
 - o conteúdo não pode ser vazio nem só espaços (validado na API e por `CHECK` no banco) e tem no máximo 2000 caracteres;
 - espaços nas pontas do conteúdo são removidos antes de gravar;
 - `created_at` é preenchido automaticamente;
-- `read_at` pode ser nulo; é preenchido quando o destinatário marca a conversa como lida;
-- mensagens não são editadas nem excluídas (fora do escopo);
+- a leitura não fica na mensagem: cada participante guarda a própria em `chat_participants.last_read_message_id`;
+- `edited_at` é preenchido quando o autor edita a mensagem; nulo enquanto não houver edição;
+- `deleted_at` é preenchido quando o autor apaga a mensagem; o conteúdo é esvaziado e a mensagem permanece no histórico marcada como apagada;
+- somente o autor edita ou apaga a própria mensagem, e nunca uma já apagada;
 - enviar uma mensagem atualiza `chats.updated_at` (última atividade da conversa).
 
 ---
@@ -472,9 +489,12 @@ User
 
 Relacionamentos principais:
 
-- User N:N Chat, através de `chat_participants` (no JPA: `Chat.participants`, `@ManyToMany`)
+- Chat 1:N ChatParticipant (no JPA: `Chat.participants`, `@OneToMany` com `orphanRemoval`)
+- User 1:N ChatParticipant
+- ChatParticipant N:1 Message (a última mensagem lida por aquele participante)
 - Chat 1:N Message
-- User 1:N Message
+- User 1:N Message (remetente)
+- Chat N:1 User (dono do grupo; nulo em conversa individual)
 
 ---
 
@@ -570,7 +590,7 @@ Referência completa em [docs/chat.md](docs/chat.md#websocket).
 | Autenticação | `Authorization: Bearer <jwt>` no frame `CONNECT`; token inválido → frame `ERROR` e conexão encerrada |
 | Envio | `SEND /app/chats/{chatId}/messages` com `{ "content": "..." }` |
 | Mensagens recebidas | `/user/queue/messages` — `MessageResponse`, para os dois participantes |
-| Leitura | `/user/queue/read` — `{ chatId, readerId, markedAsRead, readAt }`, para os dois participantes |
+| Leitura | `/user/queue/read` — `{ chatId, readerId, lastReadMessageId, markedAsRead }`, para os participantes |
 | Erros do envio | `/user/queue/errors` — `ApiError`, só para quem enviou |
 | Presença | `/topic/presence` — `{ userId, status }`, para todos os conectados |
 
@@ -752,7 +772,10 @@ src/main/resources/db/migration/
 ├── V4__create_chats.sql                  (aplicada)
 ├── V5__create_chat_participants.sql      (aplicada)
 ├── V6__add_direct_key_to_chats.sql       (aplicada)
-└── V7__create_messages.sql               (aplicada)
+├── V7__create_messages.sql               (aplicada)
+├── V8__add_read_state_to_participants.sql (aplicada — leitura por participante)
+├── V9__add_groups_to_chats.sql           (prevista — grupos)
+└── V10__add_edit_and_delete_to_messages.sql (prevista — editar/apagar)
 ```
 
 Migrations já aplicadas nunca devem ser editadas; qualquer mudança de schema entra em uma nova versão.
@@ -1003,7 +1026,26 @@ Exemplo:
 - [ ] usuários;
 - [ ] lista de chats;
 - [ ] tela de conversa;
-- [ ] WebSocket.
+- [ ] WebSocket;
+- [ ] grupos e edição/exclusão de mensagens;
+- [ ] remoção das páginas estáticas.
+
+### Fase 9 — GRUPOS
+
+- [ ] leitura por participante (`ChatParticipant` como entidade);
+- [ ] tipo e nome da conversa;
+- [ ] criação de grupo;
+- [ ] renomear, adicionar e remover participantes (somente o dono);
+- [ ] sair do grupo;
+- [ ] eventos de conversa no WebSocket;
+- [ ] testes.
+
+### Fase 10 — EDITAR E APAGAR MENSAGENS
+
+- [ ] editar a própria mensagem (`edited_at`);
+- [ ] apagar a própria mensagem (`deleted_at`, conteúdo esvaziado);
+- [ ] eventos no WebSocket;
+- [ ] testes.
 
 ### Fase 8 — DEPLOY
 
@@ -1055,6 +1097,11 @@ O MVP será considerado concluído quando:
 conversas (Módulo 1), mensagens via REST (Módulo 2) e tempo real via WebSocket (Módulo 3) —
 mais o Módulo 4: `Dockerfile`, backend containerizado no `compose.yaml` e teste de ponta a
 ponta do fluxo mínimo. Todos os critérios do §26 estão atendidos.
+
+**Ampliação de escopo em andamento** (registrada aqui antes da implementação, conforme a
+regra desta seção): grupos (Fase 9), edição e exclusão de mensagens (Fase 10) e o frontend
+Next.js (Fase 7), que substituirá as páginas estáticas. A entrega é incremental, um módulo
+por vez: leitura por participante → grupos → editar/apagar → frontend.
 
 O que permanece fora do escopo entregue, para eventual continuidade:
 

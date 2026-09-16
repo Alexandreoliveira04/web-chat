@@ -51,8 +51,9 @@ class ChatControllerTest {
 	private static final ChatResponse CONVERSA = new ChatResponse(10L,
 			List.of(new ParticipantResponse(1L, "Alexandre", EMAIL, UserStatus.OFFLINE),
 					new ParticipantResponse(2L, "Maria", "maria@email.com", UserStatus.ONLINE)),
-			new MessageResponse(99L, 10L, 2L, "oi, tudo bem?", Instant.parse("2026-09-14T22:05:00Z"), null),
+			new MessageResponse(99L, 10L, 2L, "oi, tudo bem?", Instant.parse("2026-09-14T22:05:00Z")),
 			3,
+			98L,
 			Instant.parse("2026-09-14T22:00:00Z"), Instant.parse("2026-09-14T22:00:00Z"));
 
 	@Test
@@ -116,7 +117,8 @@ class ChatControllerTest {
 				.andExpect(jsonPath("$[0].id").value(10))
 				.andExpect(jsonPath("$[0].lastMessage.content").value("oi, tudo bem?"))
 				.andExpect(jsonPath("$[0].lastMessage.senderId").value(2))
-				.andExpect(jsonPath("$[0].unreadCount").value(3));
+				.andExpect(jsonPath("$[0].unreadCount").value(3))
+				.andExpect(jsonPath("$[0].lastReadByOthersMessageId").value(98));
 	}
 
 	@Test

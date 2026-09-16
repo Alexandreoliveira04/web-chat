@@ -47,7 +47,7 @@ class MessageControllerTest {
 	private static final Authentication LOGADO = new UsernamePasswordAuthenticationToken(EMAIL, null, List.of());
 
 	private static final MessageResponse MENSAGEM = new MessageResponse(
-			50L, 10L, 1L, "oi Maria", Instant.parse("2026-09-14T22:00:00Z"), null);
+			50L, 10L, 1L, "oi Maria", Instant.parse("2026-09-14T22:00:00Z"));
 
 	@Test
 	void postDeveRetornar201ComAMensagem() throws Exception {
@@ -59,8 +59,7 @@ class MessageControllerTest {
 				.andExpect(jsonPath("$.chatId").value(10))
 				.andExpect(jsonPath("$.senderId").value(1))
 				.andExpect(jsonPath("$.content").value("oi Maria"))
-				.andExpect(jsonPath("$.createdAt").value("2026-09-14T22:00:00Z"))
-				.andExpect(jsonPath("$.readAt").isEmpty());
+				.andExpect(jsonPath("$.createdAt").value("2026-09-14T22:00:00Z"));
 	}
 
 	@Test

@@ -96,8 +96,7 @@ class MessageIntegrationTest {
 		mockMvc.perform(enviar(ALEXANDRE, "oi Maria"))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.senderId").value(alexandreId))
-				.andExpect(jsonPath("$.chatId").value(chatId))
-				.andExpect(jsonPath("$.readAt").isEmpty());
+				.andExpect(jsonPath("$.chatId").value(chatId));
 		mockMvc.perform(enviar(ALEXANDRE, "tudo bem?")).andExpect(status().isCreated());
 		mockMvc.perform(enviar(MARIA, "tudo sim!")).andExpect(status().isCreated());
 		mockMvc.perform(enviar(ALEXANDRE, "que bom")).andExpect(status().isCreated());
@@ -124,11 +123,30 @@ class MessageIntegrationTest {
 				.andExpect(jsonPath("$.markedAsRead").value(3));
 
 		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(MARIA)))
-				.andExpect(jsonPath("$[0].unreadCount").value(0));
+				.andExpect(jsonPath("$[0].unreadCount").value(0))
+				.andExpect(jsonPath("$[0].lastReadByOthersMessageId").isEmpty());
 
-		mockMvc.perform(get(mensagens()).header("Authorization", bearer(ALEXANDRE)))
-				.andExpect(jsonPath("$.messages[0].readAt").isNotEmpty())
-				.andExpect(jsonPath("$.messages[2].readAt").isEmpty());
+		// a leitura da Maria nao mexe nas nao lidas do Alexandre, mas marca o ✓✓ dele
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(ALEXANDRE)))
+				.andExpect(jsonPath("$[0].unreadCount").value(1))
+				.andExpect(jsonPath("$[0].lastReadByOthersMessageId").isNotEmpty());
+	}
+
+	@Test
+	void leituraDeUmParticipanteNaoZeraAsNaoLidasDoOutro() throws Exception {
+		mockMvc.perform(enviar(ALEXANDRE, "primeira"));
+		mockMvc.perform(enviar(MARIA, "resposta"));
+
+		mockMvc.perform(patch(mensagens() + "/read").header("Authorization", bearer(MARIA)))
+				.andExpect(jsonPath("$.markedAsRead").value(1));
+
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(MARIA)))
+				.andExpect(jsonPath("$[0].unreadCount").value(0));
+		mockMvc.perform(get("/api/v1/chats").header("Authorization", bearer(ALEXANDRE)))
+				.andExpect(jsonPath("$[0].unreadCount").value(1));
+
+		mockMvc.perform(patch(mensagens() + "/read").header("Authorization", bearer(MARIA)))
+				.andExpect(jsonPath("$.markedAsRead").value(0));
 	}
 
 	@Test

@@ -1,6 +1,7 @@
 package br.edu.webchat.chat.repository;
 
 import br.edu.webchat.chat.entity.Chat;
+import br.edu.webchat.chat.entity.ChatParticipant;
 import br.edu.webchat.chat.entity.Message;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.repository.UserRepository;
@@ -13,7 +14,6 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.ActiveProfiles;
 
-import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +50,7 @@ class MessageRepositoryTest {
 	}
 
 	@Test
-	void devePersistirMensagemComDataENaoLida() {
+	void devePersistirMensagemComData() {
 		Message saved = messageRepository.saveAndFlush(new Message(comMaria, alexandre, "oi"));
 		entityManager.clear();
 
@@ -58,7 +58,6 @@ class MessageRepositoryTest {
 
 		assertThat(reloaded.getId()).isPositive();
 		assertThat(reloaded.getCreatedAt()).isNotNull();
-		assertThat(reloaded.getReadAt()).isNull();
 		assertThat(reloaded.getChat().getId()).isEqualTo(comMaria.getId());
 		assertThat(reloaded.getSender().getId()).isEqualTo(alexandre.getId());
 	}
@@ -104,21 +103,44 @@ class MessageRepositoryTest {
 	}
 
 	@Test
-	void marcarComoLidaAfetaSomenteMensagensRecebidasAindaNaoLidas() {
-		enviar(comMaria, maria, 3);
+	void marcadorDeLeituraDeUmParticipanteNaoAfetaOOutro() {
+		List<Long> daMaria = enviar(comMaria, maria, 3);
 		enviar(comMaria, alexandre, 2);
 		enviar(comJoao, alexandre, 1);
-		entityManager.flush();
 
-		Instant agora = Instant.now();
-		assertThat(messageRepository.markAsRead(comMaria.getId(), alexandre.getId(), agora)).isEqualTo(3);
-		assertThat(messageRepository.markAsRead(comMaria.getId(), alexandre.getId(), agora)).isZero();
+		// Alexandre le tudo: seu marcador vai para a ultima mensagem da conversa
+		Long ultima = messageRepository.findLastMessageId(comMaria.getId());
+		assertThat(messageRepository.countUnread(comMaria.getId(), alexandre.getId(), 0, ultima)).isEqualTo(3);
+		marcarLido(comMaria, alexandre, ultima);
 		entityManager.clear();
 
 		assertThat(messageRepository.countUnreadByChat(List.of(comMaria.getId()), alexandre.getId())).isEmpty();
 		assertThat(messageRepository.countUnreadByChat(List.of(comMaria.getId()), maria.getId()))
 				.singleElement()
 				.satisfies(unread -> assertThat(unread.getTotal()).isEqualTo(2));
+
+		// leitura parcial da Maria: so as anteriores ao marcador saem da conta
+		marcarLido(comMaria, maria, daMaria.get(2));
+		entityManager.clear();
+
+		assertThat(messageRepository.countUnreadByChat(List.of(comMaria.getId()), maria.getId()))
+				.singleElement()
+				.satisfies(unread -> assertThat(unread.getTotal()).isEqualTo(2));
+	}
+
+	@Test
+	void ultimaMensagemDaConversaEUsadaComoMarcador() {
+		assertThat(messageRepository.findLastMessageId(comMaria.getId())).isNull();
+
+		List<Long> ids = enviar(comMaria, alexandre, 3);
+
+		assertThat(messageRepository.findLastMessageId(comMaria.getId())).isEqualTo(ids.get(2));
+	}
+
+	private void marcarLido(Chat chat, User user, Long messageId) {
+		ChatParticipant participant = chat.participantOf(user.getId()).orElseThrow();
+		participant.setLastReadMessage(entityManager.getEntityManager().getReference(Message.class, messageId));
+		entityManager.flush();
 	}
 
 	private List<Long> enviar(Chat chat, User sender, int quantidade) {

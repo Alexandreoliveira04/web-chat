@@ -27,8 +27,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -43,6 +45,9 @@ class ChatServiceTest {
 	@Mock
 	private UserRepository userRepository;
 
+	@Mock
+	private ChatCreator chatCreator;
+
 	private ChatService chatService;
 
 	private final User alexandre = usuario(1L, "Alexandre", "alexandre@email.com");
@@ -51,15 +56,16 @@ class ChatServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		chatService = new ChatService(chatRepository, messageRepository, userRepository);
+		chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator);
 	}
 
 	@Test
 	void deveCriarConversaQuandoNaoExiste() {
 		when(userRepository.findByEmail("alexandre@email.com")).thenReturn(Optional.of(alexandre));
 		when(userRepository.findById(2L)).thenReturn(Optional.of(maria));
-		when(chatRepository.findByDirectKey("1:2")).thenReturn(Optional.empty());
-		when(chatRepository.saveAndFlush(any(Chat.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(chatRepository.findByDirectKey("1:2"))
+				.thenReturn(Optional.empty())
+				.thenReturn(Optional.of(chat(10L, alexandre, maria)));
 
 		CreateChatResult result = chatService.create("alexandre@email.com", new CreateChatRequest(2L));
 
@@ -67,6 +73,7 @@ class ChatServiceTest {
 		assertThat(result.chat().participants())
 				.extracting(ParticipantResponse::id)
 				.containsExactly(1L, 2L);
+		verify(chatCreator).createDirect(1L, 2L);
 	}
 
 	@Test
@@ -80,7 +87,7 @@ class ChatServiceTest {
 
 		assertThat(result.created()).isFalse();
 		assertThat(result.chat().id()).isEqualTo(10L);
-		verify(chatRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(chatCreator);
 	}
 
 	@Test
@@ -98,8 +105,8 @@ class ChatServiceTest {
 		when(chatRepository.findByDirectKey("1:2"))
 				.thenReturn(Optional.empty())
 				.thenReturn(Optional.of(criadaPorOutraRequisicao));
-		when(chatRepository.saveAndFlush(any(Chat.class)))
-				.thenThrow(new DataIntegrityViolationException("uk_chats_direct_key"));
+		doThrow(new DataIntegrityViolationException("uk_chats_direct_key"))
+				.when(chatCreator).createDirect(1L, 2L);
 
 		CreateChatResult result = chatService.create("alexandre@email.com", new CreateChatRequest(2L));
 
@@ -112,8 +119,8 @@ class ChatServiceTest {
 		when(userRepository.findByEmail("alexandre@email.com")).thenReturn(Optional.of(alexandre));
 		when(userRepository.findById(2L)).thenReturn(Optional.of(maria));
 		when(chatRepository.findByDirectKey("1:2")).thenReturn(Optional.empty());
-		when(chatRepository.saveAndFlush(any(Chat.class)))
-				.thenThrow(new DataIntegrityViolationException("fk_chat_participants_user"));
+		doThrow(new DataIntegrityViolationException("fk_chat_participants_user"))
+				.when(chatCreator).createDirect(1L, 2L);
 
 		assertThatThrownBy(() -> chatService.create("alexandre@email.com", new CreateChatRequest(2L)))
 				.isInstanceOf(DataIntegrityViolationException.class);
@@ -126,7 +133,7 @@ class ChatServiceTest {
 		assertThatThrownBy(() -> chatService.create("alexandre@email.com", new CreateChatRequest(1L)))
 				.isInstanceOf(BadRequestException.class);
 
-		verify(chatRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(chatCreator);
 	}
 
 	@Test
@@ -138,7 +145,7 @@ class ChatServiceTest {
 				.isInstanceOf(NotFoundException.class)
 				.hasMessageContaining("99");
 
-		verify(chatRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(chatCreator);
 	}
 
 	@Test
