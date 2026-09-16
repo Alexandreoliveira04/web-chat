@@ -12,7 +12,9 @@ Componentes de infraestrutura usados por todos os módulos. Deve conter apenas o
 ```text
 shared/
 ├── config/
-│   └── PasswordEncoderConfig
+│   ├── PasswordEncoderConfig
+│   ├── CorsConfig
+│   └── StaticResourceConfig
 ├── controller/
 │   └── HealthController
 └── exception/
@@ -136,12 +138,19 @@ não é coberto.
 
 ## `config/`
 
-Contém apenas o `PasswordEncoderConfig` (BCrypt), usado pelos módulos USER e AUTH. O
-`SecurityConfig` ficou no módulo AUTH, e a configuração de WebSocket ficará no módulo CHAT.
+- `PasswordEncoderConfig`: BCrypt, usado pelos módulos USER e AUTH.
+- `CorsConfig`: libera as origens de `CORS_ALLOWED_ORIGINS` em `/api/**`, com os métodos e os
+  cabeçalhos que o frontend usa. Em desenvolvimento o front roda em `:3000` e o backend em
+  `:8080`; no build servido pelo próprio Spring Boot, tudo fica na mesma origem e o CORS
+  nem entra em jogo.
+- `StaticResourceConfig`: serve o export do Next e resolve `/login` → `login.html`,
+  `/chat` → `chat.html`. Sem isso, os caminhos sem extensão do App Router dariam 404.
+
+O `SecurityConfig` ficou no módulo AUTH e a configuração de WebSocket, no módulo CHAT.
 
 ## Configuração da aplicação
 
-Definida em `src/main/resources/application.yml`, com valores lidos de variáveis de
+Definida em `backend/src/main/resources/application.yml`, com valores lidos de variáveis de
 ambiente. Os padrões correspondem ao `compose.yaml` e servem **apenas** para
 desenvolvimento local:
 
@@ -159,6 +168,7 @@ desenvolvimento local:
 | `ADMIN_PASSWORD` | vazio |
 | `ADMIN_NAME` | `Administrador` |
 | `WS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas no handshake WebSocket |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas nas chamadas REST |
 
 ### Perfis
 
@@ -167,7 +177,7 @@ desenvolvimento local:
 | (nenhum) | `application.yml` | Execução local contra o PostgreSQL do Docker |
 | `dev` | `application-dev.yml` | Log de SQL e de web; `JWT_SECRET` e administrador descartáveis |
 | (nenhum, em container) | `compose.yaml`, profile `app` | Backend no Docker; as variáveis vêm do `environment` do serviço |
-| `test` | `src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
+| `test` | `backend/src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
 
 O perfil `test` existe para que `mvnw test` rode sem exigir Docker. A contrapartida é
 que os testes não validam SQL específico do PostgreSQL — quando as migrations reais

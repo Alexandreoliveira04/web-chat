@@ -15,7 +15,8 @@ Para instalar, rodar e testar o projeto, ver o [README](../README.md).
 | [shared](shared.md) | Configuração, tratamento de erros, health check | 1 | Implementado |
 | [user](user.md) | Colaboradores: cadastro, consulta, perfil, status, papel | 2, 3.1 | Implementado |
 | [auth](auth.md) | Registro, login, JWT, Spring Security, autorização por papéis | 3, 3.1 | Implementado |
-| [chat](chat.md) | Conversas, mensagens, histórico, WebSocket | 4–6 | Implementado |
+| [chat](chat.md) | Conversas, grupos, mensagens, histórico, WebSocket | 4–6, 9–10 | Implementado |
+| [frontend](frontend.md) | Interface web em Next.js | 7 | Implementado |
 
 ## Convenções comuns
 
@@ -64,5 +65,5 @@ exige `Authorization: Bearer <token>`. Algumas rotas exigem também o papel `ADM
 ### Banco
 
 O schema é versionado exclusivamente por migrations Flyway em
-`src/main/resources/db/migration`. O Hibernate roda em `ddl-auto: validate` e nunca
+`backend/src/main/resources/db/migration`. O Hibernate roda em `ddl-auto: validate` e nunca
 altera o banco. Cada módulo cria as próprias migrations na sua fase.

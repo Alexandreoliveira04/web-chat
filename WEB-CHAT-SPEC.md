@@ -146,12 +146,14 @@ Spring Boot 3 possui Java 17 como requisito mínimo. A versão exata do Spring B
 
 ### Frontend
 
-Planejado:
-
-- Next.js
+- Next.js 16 (App Router)
 - TypeScript
+- Tailwind CSS
+- `@stomp/stompjs` para o tempo real
 
-O frontend não faz parte da primeira etapa de implementação.
+Implementado na Fase 7, em `frontend/`, com **export estático**: o build gera HTML/JS que o
+próprio Spring Boot serve, mantendo um único artefato de deploy. Detalhes em
+[docs/frontend.md](docs/frontend.md).
 
 ### Infraestrutura
 
@@ -357,33 +359,44 @@ Evitar transformar `shared` em um depósito de classes sem responsabilidade clar
 
 ```text
 web-chat/
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── br/
-│   │   │       └── edu/
-│   │   │           └── webchat/
-│   │   │               ├── WebChatApplication.java
-│   │   │               │
-│   │   │               ├── auth/
-│   │   │               ├── user/
-│   │   │               ├── chat/
-│   │   │               └── shared/
+├── backend/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── java/
+│   │   │   │   └── br/
+│   │   │   │       └── edu/
+│   │   │   │           └── webchat/
+│   │   │   │               ├── WebChatApplication.java
+│   │   │   │               │
+│   │   │   │               ├── auth/
+│   │   │   │               ├── user/
+│   │   │   │               ├── chat/
+│   │   │   │               └── shared/
+│   │   │   │
+│   │   │   └── resources/
+│   │   │       ├── application.yml
+│   │   │       └── application-dev.yml
 │   │   │
-│   │   └── resources/
-│   │       ├── application.yml
-│   │       └── application-dev.yml
+│   │   └── test/
 │   │
-│   └── test/
+│   ├── pom.xml
+│   └── mvnw, mvnw.cmd, .mvn/
 │
+├── frontend/                    (Next.js: app, components, lib)
+├── docs/
 ├── compose.yaml
 ├── Dockerfile
-├── pom.xml
 ├── README.md
+├── WEB-CHAT-SPEC.md
 └── .gitignore
 ```
 
 O package raiz deverá ser ajustado caso o projeto existente utilize outro namespace.
+
+**Decisão de organização.** Até a Fase 7 o projeto Maven ficava na raiz. Com a chegada do
+frontend, backend e frontend passaram a ser duas pastas irmãs (`backend/` e `frontend/`),
+cada uma com as próprias ferramentas de build. Continua sendo **um único projeto Maven** e um
+único artefato de deploy, como manda a seção 6.
 
 ---
 
@@ -537,6 +550,8 @@ DELETE /api/v1/chats/{chatId}/participants/{userId}
 DELETE /api/v1/chats/{chatId}/participants/me
 GET    /api/v1/chats/{chatId}/messages?before={messageId}&size={1-100}
 POST   /api/v1/chats/{chatId}/messages
+PATCH  /api/v1/chats/{chatId}/messages/{messageId}
+DELETE /api/v1/chats/{chatId}/messages/{messageId}
 PATCH  /api/v1/chats/{chatId}/messages/read
 ```
 
@@ -597,6 +612,7 @@ Referência completa em [docs/chat.md](docs/chat.md#websocket).
 | Mensagens recebidas | `/user/queue/messages` — `MessageResponse`, para os dois participantes |
 | Leitura | `/user/queue/read` — `{ chatId, readerId, lastReadMessageId, markedAsRead }`, para os participantes |
 | Erros do envio | `/user/queue/errors` — `ApiError`, só para quem enviou |
+| Mensagem editada/apagada | `/user/queue/message-updates` — `MessageResponse` com `editedAt`/`deletedAt`, para os participantes |
 | Conversas | `/user/queue/chats` — `{ event, chatId }` (`CREATED`/`UPDATED`/`REMOVED`), para os participantes afetados |
 | Presença | `/topic/presence` — `{ userId, status }`, para todos os conectados |
 
@@ -721,6 +737,7 @@ ADMIN_NAME
 ADMIN_EMAIL
 ADMIN_PASSWORD
 WS_ALLOWED_ORIGINS
+CORS_ALLOWED_ORIGINS
 ```
 
 O arquivo `application.yml` deverá utilizar variáveis de ambiente quando apropriado.
@@ -771,7 +788,7 @@ As migrations devem ser versionadas no Git.
 Migrations atuais e previstas:
 
 ```text
-src/main/resources/db/migration/
+backend/src/main/resources/db/migration/
 ├── V1__init.sql                          (aplicada)
 ├── V2__create_users.sql                  (aplicada)
 ├── V3__add_role_to_users.sql             (aplicada)
@@ -780,8 +797,8 @@ src/main/resources/db/migration/
 ├── V6__add_direct_key_to_chats.sql       (aplicada)
 ├── V7__create_messages.sql               (aplicada)
 ├── V8__add_read_state_to_participants.sql (aplicada — leitura por participante)
-├── V9__add_groups_to_chats.sql           (prevista — grupos)
-└── V10__add_edit_and_delete_to_messages.sql (prevista — editar/apagar)
+├── V9__add_groups_to_chats.sql           (aplicada — grupos)
+└── V10__add_edit_and_delete_to_messages.sql (aplicada — editar/apagar)
 ```
 
 Migrations já aplicadas nunca devem ser editadas; qualquer mudança de schema entra em uma nova versão.
@@ -829,9 +846,11 @@ A prioridade é manter o banco containerizado e o backend executando pela IDE/Ma
 
 ### Implementado (Módulo 4)
 
-- **`Dockerfile` multi-stage**: build com `maven:3.9-eclipse-temurin-17` (dependências em
-  camada separada do código, para aproveitar cache) e runtime com
-  `eclipse-temurin:17-jre-alpine`, executando como usuário sem privilégios.
+- **`Dockerfile` multi-stage**: estágio Node (`node:22-alpine`) gera o export do frontend,
+  estágio Maven (`maven:3.9-eclipse-temurin-17`, com dependências em camada separada do
+  código) empacota o jar já com o front em `static/` — o `pom.xml` declara `frontend/out`
+  como recurso —, e o runtime é `eclipse-temurin:17-jre-alpine` executando como usuário sem
+  privilégios.
 - **`compose.yaml`**: o serviço `app` fica no profile `app`, então `docker compose up -d`
   continua subindo apenas o banco (fluxo de desenvolvimento) e
   `docker compose --profile app up -d --build` sobe banco + aplicação. O `app` espera o
@@ -1027,14 +1046,14 @@ Exemplo:
 
 ### Fase 7 — FRONTEND
 
-- [ ] projeto Next.js;
-- [ ] login;
-- [ ] usuários;
-- [ ] lista de chats;
-- [ ] tela de conversa;
-- [ ] WebSocket;
-- [ ] grupos e edição/exclusão de mensagens;
-- [ ] remoção das páginas estáticas.
+- [x] projeto Next.js;
+- [x] login;
+- [x] usuários;
+- [x] lista de chats;
+- [x] tela de conversa;
+- [x] WebSocket;
+- [x] grupos e edição/exclusão de mensagens;
+- [x] remoção das páginas estáticas.
 
 ### Fase 9 — GRUPOS
 
@@ -1048,10 +1067,10 @@ Exemplo:
 
 ### Fase 10 — EDITAR E APAGAR MENSAGENS
 
-- [ ] editar a própria mensagem (`edited_at`);
-- [ ] apagar a própria mensagem (`deleted_at`, conteúdo esvaziado);
-- [ ] eventos no WebSocket;
-- [ ] testes.
+- [x] editar a própria mensagem (`edited_at`);
+- [x] apagar a própria mensagem (`deleted_at`, conteúdo esvaziado);
+- [x] eventos no WebSocket;
+- [x] testes.
 
 ### Fase 8 — DEPLOY
 
@@ -1107,23 +1126,16 @@ ponta do fluxo mínimo. Todos os critérios do §26 estão atendidos.
 **Ampliação de escopo em andamento** (registrada aqui antes da implementação, conforme a
 regra desta seção): grupos (Fase 9), edição e exclusão de mensagens (Fase 10) e o frontend
 Next.js (Fase 7), que substituirá as páginas estáticas. A entrega é incremental, um módulo
-por vez: leitura por participante (concluída) → grupos (concluída) → editar/apagar →
-frontend. As páginas estáticas atuais listam apenas conversas individuais; grupos aparecem
-só no frontend novo.
+por vez: leitura por participante → grupos → editar/apagar → frontend Next.js.
+**Todas concluídas.** As páginas estáticas foram removidas; a interface agora é o projeto
+`frontend/`, cujo build é servido pelo próprio Spring Boot.
 
 O que permanece fora do escopo entregue, para eventual continuidade:
 
-- **Fase 7 — frontend Next.js.** O front atual é um conjunto de páginas estáticas
-  (HTML/CSS/JS) servidas pelo próprio Spring Boot em `src/main/resources/static`, que consome
-  a API REST e o WebSocket.
 - **Fase 8 — deploy na Google Cloud.** O `Dockerfile` e a configuração por variáveis de
   ambiente já existem; faltam provisionar banco gerenciado, domínio/HTTPS e monitoramento.
   Antes de escalar para mais de uma instância, ver a restrição do §22 sobre o broker em
   memória.
-
-O frontend atual é um conjunto de páginas estáticas (HTML/CSS/JS) servidas pelo próprio
-Spring Boot em `src/main/resources/static`, usado para demonstrar a API. O frontend
-Next.js da Fase 7 continua planejado.
 
 Alterações arquiteturais ou funcionais relevantes devem ser registradas nesta especificação antes de serem implementadas.
 

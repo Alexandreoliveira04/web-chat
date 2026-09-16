@@ -105,7 +105,7 @@ duas vezes por requisição.
 | `GET /api/v1/health` | público |
 | `POST /api/v1/auth/register` | público |
 | `POST /api/v1/auth/login` | público |
-| páginas estáticas (`/`, `/*.html`, `/css/**`, `/js/**`, `/img/**`) | público |
+| frontend (`/`, `/login`, `/chat`, `/_next/**`, assets) | público |
 | `GET /api/v1/users` | autenticado |
 | `GET /api/v1/users/{id}` | autenticado |
 | `GET /api/v1/users/me` | autenticado |
@@ -271,4 +271,6 @@ false)`: eles verificam o comportamento do controller, e a segurança é coberta
   `OFFLINE`, e todo usuário nasce `OFFLINE` — bloquear esse valor impediria qualquer
   login. Um estado do tipo "inativo" exigiria um novo valor no enum, fora do escopo
   desta etapa.
-- **CORS não configurado.** Será necessário quando o frontend Next.js existir.
+- **CORS liberado por origem configurável** (`CORS_ALLOWED_ORIGINS`), necessário porque em
+  desenvolvimento o frontend roda em outra porta. Em produção, front e API ficam na mesma
+  origem.

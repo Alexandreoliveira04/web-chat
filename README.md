@@ -2,20 +2,21 @@
 
 Aplicação web de chat interno entre colaboradores.
 
-Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo MVC.
-A especificação completa do projeto está em [WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a
-documentação por módulo em [docs/](docs/README.md).
+Backend em Java 17 + Spring Boot 3, organizado como monólito modular seguindo MVC, e
+frontend em Next.js 16 + TypeScript. A especificação completa está em
+[WEB-CHAT-SPEC.md](WEB-CHAT-SPEC.md) e a documentação por módulo em [docs/](docs/README.md).
 
-> Estado atual: **MVP concluído** — cadastro, login com papéis, conversas, mensagens,
-> histórico, leitura e tempo real, com backend containerizado. Fora do escopo entregue:
-> frontend Next.js (fase 7) e deploy na Google Cloud (fase 8).
+> Estado atual: cadastro, login com papéis, conversas individuais e **em grupo**, mensagens
+> com **edição e exclusão**, histórico, leitura por participante, tempo real por WebSocket e
+> interface em Next.js. Fora do escopo entregue: deploy na Google Cloud (fase 8).
 
 ---
 
 ## Requisitos
 
 - Java 17
-- Maven (o wrapper `mvnw` já acompanha o projeto)
+- Maven (o wrapper `mvnw` já acompanha o projeto, em `backend/`)
+- Node.js 20+ (para o frontend)
 - Docker
 - Docker Compose
 
@@ -42,7 +43,8 @@ docker compose down
 
 ## Tudo em containers (opcional)
 
-Além do banco, o backend também pode rodar em container:
+Além do banco, backend e frontend também rodam em container (a imagem constrói o front e
+empacota tudo em um jar só):
 
 ```bash
 docker compose --profile app up -d --build
@@ -75,12 +77,14 @@ docker build -t web-chat .
 Com o banco no ar:
 
 ```bash
+cd backend
 ./mvnw spring-boot:run
 ```
 
 No Windows:
 
 ```bash
+cd backend
 mvnw.cmd spring-boot:run
 ```
 
@@ -89,7 +93,7 @@ A aplicação sobe em `http://localhost:8080`.
 Para ativar o perfil de desenvolvimento (log de SQL e de web):
 
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # a partir de backend/
 ```
 
 ### Endpoints
@@ -114,6 +118,8 @@ POST   /api/v1/chats
 GET    /api/v1/chats/{chatId}
 GET    /api/v1/chats/{chatId}/messages?before={id}&size={1-100}
 POST   /api/v1/chats/{chatId}/messages
+PATCH  /api/v1/chats/{chatId}/messages/{messageId}     (editar; só o autor)
+DELETE /api/v1/chats/{chatId}/messages/{messageId}     (apagar; só o autor)
 PATCH  /api/v1/chats/{chatId}/messages/read
 ```
 
@@ -214,6 +220,15 @@ curl "http://localhost:8080/api/v1/chats/1/messages?size=50" \
 # 8. marcar como lidas as mensagens recebidas
 curl -X PATCH http://localhost:8080/api/v1/chats/1/messages/read \
   -H "Authorization: Bearer <token>"
+
+# 9. editar e apagar a própria mensagem
+curl -X PATCH http://localhost:8080/api/v1/chats/1/messages/42 \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"content":"texto corrigido"}'
+
+curl -X DELETE http://localhost:8080/api/v1/chats/1/messages/42 \
+  -H "Authorization: Bearer <token>"
 ```
 
 ### Tempo real (WebSocket)
@@ -224,6 +239,7 @@ STOMP sobre WebSocket em `ws://localhost:8080/ws`, autenticado com o JWT no fram
 | ----- | ------- | -------- |
 | `SEND` | `/app/chats/{chatId}/messages` | `{ "content": "..." }` |
 | `SUBSCRIBE` | `/user/queue/messages` | mensagens novas das suas conversas |
+| `SUBSCRIBE` | `/user/queue/message-updates` | mensagens editadas ou apagadas |
 | `SUBSCRIBE` | `/user/queue/read` | avisos de leitura (✓✓) |
 | `SUBSCRIBE` | `/user/queue/errors` | erros do seu último envio |
 | `SUBSCRIBE` | `/user/queue/chats` | grupos criados, renomeados ou com mudança de participantes |
@@ -232,16 +248,33 @@ STOMP sobre WebSocket em `ws://localhost:8080/ws`, autenticado com o JWT no fram
 Mensagens enviadas pelo `POST` REST também são entregues em tempo real. Protocolo completo
 em [docs/chat.md](docs/chat.md#websocket).
 
-### Interface web
+---
 
-`http://localhost:8080` usa a API e o WebSocket: abrir um contato inicia ou reaproveita a
-conversa e carrega o histórico; mensagens chegam na hora, as não lidas aparecem na barra
-lateral, os ✓✓ atualizam quando o outro lê e o anel verde no avatar indica quem está online.
+## Frontend (Next.js)
 
-⚠️ Estas páginas são temporárias e mostram **apenas conversas individuais**. Grupos já
-funcionam na API e aparecerão no frontend Next.js (fase 7).
+O projeto fica em [`frontend/`](frontend/) e cobre login, cadastro, conversas individuais e
+em grupo, envio, edição e exclusão de mensagens, não lidas, ✓✓ e presença — tudo em tempo
+real. Detalhes em [docs/frontend.md](docs/frontend.md).
 
-Para testar a conversa, abra duas janelas (uma delas anônima, já que o token fica no
+**Desenvolvimento** (front em `:3000`, com recarga automática):
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**Build servido pelo backend** (`http://localhost:8080`, mesma origem, sem CORS):
+
+```bash
+cd frontend
+npm run build             # gera frontend/out
+```
+
+O Maven empacota `frontend/out` dentro do jar automaticamente (declarado como `<resource>` no
+`pom.xml`). Sem rodar o build do front, o backend sobe apenas com a API.
+
+Para testar uma conversa, abra duas janelas (uma anônima, já que o token fica no
 `localStorage`) e entre com usuários diferentes.
 
 ---
@@ -270,13 +303,13 @@ aos do `compose.yaml` para facilitar o desenvolvimento local:
 que nenhum segredo fique embutido no código. Precisa de no mínimo 32 bytes (HS256).
 
 ```powershell
-# PowerShell
+# PowerShell, a partir de backend/
 $env:JWT_SECRET = "troque-por-um-valor-longo-e-aleatorio-de-32-bytes"
 .\mvnw.cmd spring-boot:run
 ```
 
 ```bash
-# bash
+# bash, a partir de backend/
 JWT_SECRET="troque-por-um-valor-longo-e-aleatorio-de-32-bytes" ./mvnw spring-boot:run
 ```
 
@@ -293,7 +326,7 @@ versionada.
 
 ## Migrations
 
-O schema é versionado com Flyway, em `src/main/resources/db/migration`.
+O schema é versionado com Flyway, em `backend/src/main/resources/db/migration`.
 As migrations são aplicadas automaticamente na inicialização da aplicação.
 O Hibernate roda em `ddl-auto: validate` e nunca altera o banco.
 
@@ -302,6 +335,7 @@ O Hibernate roda em `ddl-auto: validate` e nunca altera o banco.
 ## Testes
 
 ```bash
+cd backend
 ./mvnw test
 ```
 
@@ -318,13 +352,19 @@ conversa → envio → histórico → leitura.
 ## Estrutura
 
 ```text
-br.edu.webchat
-├── WebChatApplication.java
-├── auth/     config, controller, dto, filter, jwt, service
-├── user/     config, controller, dto, entity, repository, service
-├── chat/     controller, dto, entity, repository, service, websocket
-└── shared/
-    ├── config/        PasswordEncoder (BCrypt)
-    ├── controller/    health check
-    └── exception/     tratamento global de erros
+web-chat/
+├── backend/                        pom.xml, mvnw, src/
+│   └── src/main/java/br/edu/webchat/
+│       ├── WebChatApplication.java
+│       ├── auth/     config, controller, dto, filter, jwt, service
+│       ├── user/     config, controller, dto, entity, repository, service
+│       ├── chat/     controller, dto, entity, repository, service, websocket
+│       └── shared/
+│           ├── config/        PasswordEncoder, CORS, arquivos estáticos
+│           ├── controller/    health check
+│           └── exception/     tratamento global de erros
+├── frontend/                       app (login, chat), components, lib (api, realtime)
+├── docs/                           documentação por módulo
+├── compose.yaml
+└── Dockerfile
 ```

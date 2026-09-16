@@ -2,8 +2,8 @@
 
 **Pacote:** `br.edu.webchat.chat`
 **Fases:** 4 (conversas), 5 (mensagens), 6 (WebSocket), 9 (grupos), 10 (editar/apagar)
-**Situação:** conversas individuais e em grupo, mensagens, tempo real e leitura por
-participante implementados; edição/exclusão de mensagens (Fase 10) pendente
+**Situação:** implementado — conversas individuais e em grupo, mensagens (envio, edição,
+exclusão), histórico, leitura por participante e tempo real
 
 Responsável pelas conversas, participantes, mensagens, histórico e comunicação em
 tempo real.
@@ -15,12 +15,12 @@ chat/
 ├── controller/   ChatController, MessageController
 ├── dto/          CreateChatRequest, CreateChatResult, CreateGroupRequest, RenameChatRequest,
 │                 AddParticipantRequest, ChatResponse, ChatEventResponse, ParticipantResponse,
-│                 SendMessageRequest, MessageResponse, MessageHistoryResponse, MarkAsReadResponse,
+│                 SendMessageRequest, EditMessageRequest, MessageResponse, MessageHistoryResponse, MarkAsReadResponse,
 │                 ReadReceiptResponse, PresenceResponse
 ├── entity/       Chat, ChatType, ChatParticipant, ChatParticipantId, Message
 ├── repository/   ChatRepository, MessageRepository
 ├── service/      ChatService, ChatCreator, MessageService,
-│                 MessageSentEvent, MessagesReadEvent, ChatChangedEvent
+│                 MessageSentEvent, MessageUpdatedEvent, MessagesReadEvent, ChatChangedEvent
 └── websocket/    WebSocketConfig, StompAuthInterceptor, ChatWebSocketController,
                   ChatEventBroadcaster, PresenceService
 ```
@@ -32,7 +32,7 @@ Dois tipos de conversa:
 - **`DIRECT`**: exatamente dois participantes, uma única por par (ver [`direct_key`](#por-que-direct_key));
 - **`GROUP`**: nome, dono e de 2 a 50 participantes.
 
-Edição e exclusão de mensagens entram na Fase 10. Envio de arquivos, respostas e reações
+Cada mensagem pode ser editada ou apagada pelo autor. Envio de arquivos, respostas e reações
 seguem fora do escopo.
 
 ## Modelo de dados
@@ -58,15 +58,17 @@ seguem fora do escopo.
 | `last_read_message_id` | `BIGINT` | FK → `messages.id`, `ON DELETE SET NULL`; última mensagem lida **por este participante** |
 | `joined_at` | `TIMESTAMPTZ` | quando entrou na conversa |
 
-### `messages` — `V7__create_messages.sql`
+### `messages` — `V7__create_messages.sql` + `V10__add_edit_and_delete_to_messages.sql`
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
 | `id` | `BIGINT` | PK, identity; crescente, por isso também serve de ordem cronológica e de cursor |
 | `chat_id` | `BIGINT` | FK → `chats.id`, `ON DELETE CASCADE` |
 | `sender_id` | `BIGINT` | FK → `users.id` |
-| `content` | `VARCHAR(2000)` | `NOT NULL`, `CHECK (length(trim(content)) > 0)` |
+| `content` | `VARCHAR(2000)` | `NOT NULL`; vazio somente quando a mensagem está apagada |
 | `created_at` | `TIMESTAMPTZ` | preenchido no `@PrePersist` |
+| `edited_at` | `TIMESTAMPTZ` | preenchido ao editar; nulo enquanto não houver edição |
+| `deleted_at` | `TIMESTAMPTZ` | preenchido ao apagar; a linha permanece no histórico |
 
 Restrições e índices:
 
@@ -74,8 +76,8 @@ Restrições e índices:
   vezes da mesma conversa;
 - **`chats.direct_key UNIQUE`**: uma única conversa por par de usuários (vários `NULL` convivem, então grupos não conflitam);
 - **`ck_chats_type`**: `DIRECT` exige `direct_key` e proíbe `name`/`owner_id`; `GROUP` exige `name` e `owner_id` e proíbe `direct_key`;
-- **`ck_messages_content_not_blank`**: o banco também recusa conteúdo vazio ou só com
-  espaços, além da validação da API;
+- **`ck_messages_content`**: o banco recusa conteúdo vazio ou só com espaços, exceto quando
+  `deleted_at` está preenchido (mensagem apagada);
 - `idx_chat_participants_user_id`: listagem "minhas conversas";
 - `idx_messages_chat_id_id` em `(chat_id, id)`: histórico por cursor e última mensagem de
   cada conversa;
@@ -112,8 +114,9 @@ Conversa individual nasce por `new Chat(User, User)`, que calcula o `directKey` 
 uma conversa individual nunca mudam: `rename`, `addParticipant`, `removeParticipant` e `leave`
 são recusados com **400** quando o tipo é `DIRECT`.
 
-`Message` não tem setters: conteúdo, conversa e remetente são `updatable = false` (edição
-está fora do escopo). As associações são `LAZY`; `MessageResponse` usa apenas `getChat().getId()` e
+Em `Message`, conversa e remetente são `updatable = false` — nunca mudam. O conteúdo só muda
+por `edit` (que carimba `editedAt`) e por `markAsDeleted` (que esvazia o texto e carimba
+`deletedAt`). As associações são `LAZY`; `MessageResponse` usa apenas `getChat().getId()` e
 `getSender().getId()`, que o Hibernate resolve pela FK sem carregar a conversa ou o usuário.
 
 ### Por que `direct_key`
@@ -142,6 +145,8 @@ participante como arquivar ou silenciar (fora do escopo),
 | `DELETE` | `/api/v1/chats/{chatId}/participants/me` | `204` | `400`, `403`, `404` |
 | `GET` | `/api/v1/chats/{chatId}/messages?before=&size=` | `200` | `400`, `403`, `404` |
 | `POST` | `/api/v1/chats/{chatId}/messages` | `201` | `400`, `403`, `404` |
+| `PATCH` | `/api/v1/chats/{chatId}/messages/{messageId}` | `200` | `400`, `403`, `404`, `409` |
+| `DELETE` | `/api/v1/chats/{chatId}/messages/{messageId}` | `200` | `403`, `404` |
 | `PATCH` | `/api/v1/chats/{chatId}/messages/read` | `200` | `403`, `404` |
 
 Todos exigem autenticação (`401` sem token). Nenhum exige papel específico, e todos que
@@ -282,6 +287,37 @@ Content-Type: application/json
 - O envio atualiza `chats.updated_at` na mesma transação.
 - Resposta `201` sem `Location`: não existe rota para consultar uma mensagem isolada.
 
+### Editar e apagar
+
+```http
+PATCH  /api/v1/chats/1/messages/42     { "content": "texto corrigido" }
+DELETE /api/v1/chats/1/messages/42
+```
+
+Ambos devolvem `200` com o `MessageResponse` atualizado:
+
+```json
+{ "id": 42, "chatId": 1, "senderId": 1, "content": "", "createdAt": "...",
+  "editedAt": null, "deletedAt": "2026-09-16T00:41:02.114Z" }
+```
+
+Regras:
+
+- **só o autor** edita ou apaga a própria mensagem; qualquer outro participante recebe `403`,
+  e quem não participa da conversa também (`403`, sem revelar se a mensagem existe);
+- a mensagem precisa pertencer à conversa da URL, senão `404`;
+- editar valida o conteúdo como no envio (não vazio, até 2000 caracteres) e carimba `editedAt`;
+- **apagar preserva a linha**: o conteúdo é esvaziado e `deletedAt` é carimbado, então o
+  histórico dos outros participantes não fica com buracos e a paginação por cursor não muda;
+- **apagar é idempotente**: apagar de novo devolve `200` com o mesmo estado;
+- **editar uma mensagem apagada é `409`** — o texto já não existe mais;
+- a mensagem apagada continua podendo ser a `lastMessage` da conversa; o cliente mostra
+  "mensagem apagada" ao ver `deletedAt` preenchido.
+
+> **Decisão da Fase 10.** Apagar de verdade (`DELETE` no banco) foi descartado: além de abrir
+> buracos no histórico dos outros participantes, apagaria a mensagem que serve de cursor de
+> paginação e o marcador de leitura de quem parou ali.
+
 ### Histórico (paginação por cursor)
 
 ```http
@@ -408,6 +444,7 @@ são esperadas.
 | Histórico | checagem de participante + `findLatest`/`findBefore` com limite `size + 1` | 2 |
 | Enviar | checagem + `INSERT` em `messages` + `UPDATE` de `chats.updated_at` | 3 |
 | Marcar como lidas | checagem + `max(id)` da conversa + contagem da faixa + `UPDATE` do marcador | 4 |
+| Editar/apagar | checagem + busca da mensagem + `UPDATE` | 3 |
 
 Somam-se a cada requisição as buscas do usuário autenticado (uma no filtro JWT, outra no
 service).
@@ -470,6 +507,7 @@ backend, para que um envio por WebSocket não perca o texto por erro de validaç
 | `ChatRepositoryTest` | `@DataJpaTest` (H2) | persistência e `direct_key`, busca por chave, `UNIQUE`, listagem e ordenação |
 | `MessageRepositoryTest` | `@DataJpaTest` (H2) | persistência, histórico por cursor, última mensagem por conversa, não lidas só dos outros, marcador de um participante não afeta o outro |
 | `ChatIntegrationTest` | `@SpringBootTest` | cadeia real das conversas: 401, criar → reaproveitar → listar, 403, 404, 400 |
+| `EditAndDeleteMessageIntegrationTest` | `@SpringBootTest` | editar marca `editedAt` e chega aos outros, apagar esvazia o conteúdo e mantém a linha, apagar é idempotente, editar apagada é 409, só o autor edita/apaga (403), mensagem de outra conversa é 404, validação do conteúdo, mensagem apagada segue como última da conversa |
 | `GroupIntegrationTest` | `@SpringBootTest` | criar grupo (dono incluído, visível para todos e 403 para quem está fora), leitura independente por participante e ✓✓ só quando todos leem, administração restrita ao dono, 409 ao repetir participante, dono não é removido, sair transfere a posse, grupo vazio é apagado com as mensagens, operações de grupo recusadas em conversa individual, validações |
 | `MessageIntegrationTest` | `@SpringBootTest` | cadeia real: 401, fluxo envio → listagem com não lidas → histórico → leitura → ✓✓, leitura de um participante não zera a do outro, cursor sem repetição com mensagem nova no meio, conversa sobe na lista, 403 nos 3 endpoints, 400/404 |
 | `RealtimeIntegrationTest` | `@SpringBootTest(RANDOM_PORT)` + cliente STOMP real | conexão sem token/inválida recusada; `POST` REST entrega aos dois participantes e não a terceiros; envio por STOMP persiste e entrega; erro 403/400 só para quem enviou e nada é gravado; recibo de leitura; presença `ONLINE`/`OFFLINE` e status no banco |
@@ -537,6 +575,7 @@ O interceptor também restringe os frames seguintes:
 | ----- | ------- | ------- | ----------- |
 | `SEND` | `/app/chats/{chatId}/messages` | `{ "content": "..." }` (`SendMessageRequest`) | — |
 | `SUBSCRIBE` | `/user/queue/messages` | `MessageResponse` | os dois participantes, a cada mensagem enviada (por STOMP **ou** REST) |
+| `SUBSCRIBE` | `/user/queue/message-updates` | `MessageResponse` | participantes, quando uma mensagem é editada ou apagada |
 | `SUBSCRIBE` | `/user/queue/read` | `ReadReceiptResponse` | os dois participantes, quando alguém marca mensagens como lidas |
 | `SUBSCRIBE` | `/user/queue/errors` | `ApiError` | só a sessão que fez o `SEND` que falhou |
 | `SUBSCRIBE` | `/user/queue/chats` | `ChatEventResponse` | participantes afetados por mudanças na conversa |
@@ -545,6 +584,10 @@ O interceptor também restringe os frames seguintes:
 ```json
 // /user/queue/messages
 { "id": 42, "chatId": 1, "senderId": 3, "content": "oi", "createdAt": "2026-09-15T02:04:17.1Z" }
+
+// /user/queue/message-updates (mesma forma de /queue/messages, com editedAt/deletedAt)
+{ "id": 42, "chatId": 1, "senderId": 3, "content": "texto corrigido", "createdAt": "...",
+  "editedAt": "2026-09-16T00:40:12.900Z", "deletedAt": null }
 
 // /user/queue/read
 { "chatId": 1, "readerId": 4, "lastReadMessageId": 42, "markedAsRead": 3 }
