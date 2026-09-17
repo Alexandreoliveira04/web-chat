@@ -158,7 +158,7 @@ class ChatServiceTest {
 		when(chatRepository.findAllByParticipantId(1L))
 				.thenReturn(List.of(chat(11L, alexandre, joao), chat(10L, alexandre, maria)));
 
-		assertThat(chatService.findMyChats("alexandre@email.com"))
+		assertThat(chatService.findMyChats("alexandre@email.com", null))
 				.extracting(ChatResponse::id)
 				.containsExactly(11L, 10L);
 	}
@@ -174,7 +174,7 @@ class ChatServiceTest {
 		when(messageRepository.findLastMessagesOfChats(List.of(11L, 10L))).thenReturn(List.of(ultima));
 		when(messageRepository.countUnreadByChat(List.of(11L, 10L), 1L)).thenReturn(List.of(naoLidas(10L, 3L)));
 
-		List<ChatResponse> chats = chatService.findMyChats("alexandre@email.com");
+		List<ChatResponse> chats = chatService.findMyChats("alexandre@email.com", null);
 
 		assertThat(chats.get(0).lastMessage()).isNull();
 		assertThat(chats.get(0).unreadCount()).isZero();
@@ -188,7 +188,7 @@ class ChatServiceTest {
 		when(userRepository.findByEmail("joao@email.com")).thenReturn(Optional.of(joao));
 		when(chatRepository.findAllByParticipantId(3L)).thenReturn(List.of());
 
-		assertThat(chatService.findMyChats("joao@email.com")).isEmpty();
+		assertThat(chatService.findMyChats("joao@email.com", null)).isEmpty();
 		verify(messageRepository, never()).findLastMessagesOfChats(any());
 	}
 
