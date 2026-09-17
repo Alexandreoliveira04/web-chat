@@ -14,6 +14,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.util.StringUtils;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 import java.util.List;
 
 @Service
@@ -110,6 +119,33 @@ public class UserService {
 	@Transactional
 	public int markAllOffline() {
 		return userRepository.updateAllStatuses(UserStatus.OFFLINE);
+	}
+
+	@Transactional
+	public UserResponse uploadAvatar(String authenticatedEmail, MultipartFile file) {
+		User user = findEntityByEmail(authenticatedEmail);
+
+		try {
+			Path uploadDir = Paths.get("uploads", "avatars");
+			if (!Files.exists(uploadDir)) {
+				Files.createDirectories(uploadDir);
+			}
+
+			String originalFilename = StringUtils.cleanPath(file.getOriginalFilename() != null ? file.getOriginalFilename() : "avatar.png");
+			String extension = originalFilename.contains(".") ? originalFilename.substring(originalFilename.lastIndexOf(".")) : ".png";
+			String newFilename = UUID.randomUUID().toString() + extension;
+			Path targetLocation = uploadDir.resolve(newFilename);
+			
+			Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
+			
+			// Constrói a URL que será servida pelo WebConfig (ex: /uploads/avatars/uuid.png)
+			String avatarUrl = "/uploads/avatars/" + newFilename;
+			user.setAvatarUrl(avatarUrl);
+			
+			return UserResponse.from(userRepository.saveAndFlush(user));
+		} catch (IOException ex) {
+			throw new RuntimeException("Falha ao salvar a imagem do avatar", ex);
+		}
 	}
 
 	private UserResponse rename(User user, UpdateUserRequest request) {

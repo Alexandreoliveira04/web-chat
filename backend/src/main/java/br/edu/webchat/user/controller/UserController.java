@@ -6,7 +6,10 @@ import br.edu.webchat.user.dto.UserResponse;
 import br.edu.webchat.user.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -39,6 +42,11 @@ public class UserController {
 	@PutMapping("/me")
 	public UserResponse updateMe(Authentication authentication, @Valid @RequestBody UpdateUserRequest request) {
 		return userService.updateMe(authentication.getName(), request);
+	}
+
+	@PostMapping("/me/avatar")
+	public UserResponse uploadAvatar(Authentication authentication, @RequestParam("file") MultipartFile file) {
+		return userService.uploadAvatar(authentication.getName(), file);
 	}
 
 	@GetMapping("/{id}")

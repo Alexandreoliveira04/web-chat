@@ -13,6 +13,11 @@ public class StaticResourceConfig implements WebMvcConfigurer {
 
 	@Override
 	public void addResourceHandlers(ResourceHandlerRegistry registry) {
+		String uploadPath = java.nio.file.Paths.get("uploads").toFile().getAbsolutePath();
+		
+		registry.addResourceHandler("/uploads/**")
+				.addResourceLocations("file:" + uploadPath + "/");
+
 		registry.addResourceHandler("/**")
 				.addResourceLocations("classpath:/static/")
 				.resourceChain(true)
