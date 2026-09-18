@@ -90,6 +90,7 @@ export const authApi = {
 export const usersApi = {
   me: () => request<User>('/users/me'),
   list: () => request<User[]>('/users'),
+  update: (name: string) => request<User>('/users/me', { method: 'PUT', body: body({ name }) }),
 };
 
 export const chatsApi = {

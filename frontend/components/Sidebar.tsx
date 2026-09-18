@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Avatar from "./Avatar";
+import ProfileModal from "./ProfileModal";
 import { chatTitle, contactsWithoutMe, isOnline, messagePreview, sortChats } from "@/lib/format";
 import type { Chat, User } from "@/lib/types";
 
@@ -15,6 +16,7 @@ interface Props {
   onStartDirect: (user: User) => void;
   onNewGroup: () => void;
   onLogout: () => void;
+  onUpdateMe?: (newName: string) => Promise<void>; // we'll need to pass this or use API directly
 }
 
 export default function Sidebar({
@@ -27,8 +29,22 @@ export default function Sidebar({
   onStartDirect,
   onNewGroup,
   onLogout,
+  onUpdateMe,
 }: Props) {
   const [busca, setBusca] = useState("");
+  const [mostrarPerfil, setMostrarPerfil] = useState(false);
+  const [perfilDropdown, setPerfilDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setPerfilDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const termo = busca.trim().toLowerCase();
   const conversas = sortChats(chats).filter((chat) => chatTitle(chat, me.id).toLowerCase().includes(termo));
@@ -38,16 +54,60 @@ export default function Sidebar({
 
   return (
     <aside className="flex w-80 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
-      <header className="flex items-center gap-3 border-b border-slate-800 p-4">
-        <Avatar name={me.name} online />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{me.name}</p>
-          <p className="text-xs text-slate-400">{conectado ? "conectado" : "reconectando..."}</p>
-        </div>
-        <button type="button" onClick={onLogout} className="text-sm text-slate-400 hover:text-slate-200">
-          Sair
+      <header className="relative flex items-center justify-between border-b border-slate-800 p-4">
+        <button
+          type="button"
+          onClick={() => setPerfilDropdown(!perfilDropdown)}
+          className="flex flex-1 items-center gap-3 text-left transition hover:opacity-80"
+        >
+          <Avatar name={me.name} online />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{me.name}</p>
+            <p className="text-xs text-slate-400">{conectado ? "conectado" : "reconectando..."}</p>
+          </div>
+          <span className="mr-2 text-xs text-slate-500">▼</span>
         </button>
+
+        {perfilDropdown && (
+          <div
+            ref={dropdownRef}
+            className="absolute left-4 top-16 z-50 w-48 rounded-md border border-slate-700 bg-slate-800 py-1 shadow-lg"
+          >
+            <button
+              onClick={() => {
+                setPerfilDropdown(false);
+                setMostrarPerfil(true);
+              }}
+              className="block w-full px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700"
+            >
+              Editar Perfil
+            </button>
+            <button
+              onClick={() => {
+                document.documentElement.classList.toggle("theme-light");
+                setPerfilDropdown(false);
+              }}
+              className="block w-full px-4 py-2 text-left text-sm text-slate-200 hover:bg-slate-700"
+            >
+              Alternar Tema
+            </button>
+            <button
+              onClick={onLogout}
+              className="block w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-slate-700"
+            >
+              Sair
+            </button>
+          </div>
+        )}
       </header>
+
+      {mostrarPerfil && onUpdateMe && (
+        <ProfileModal
+          me={me}
+          onClose={() => setMostrarPerfil(false)}
+          onUpdate={onUpdateMe}
+        />
+      )}
 
       <div className="space-y-2 p-3">
         <input
@@ -82,7 +142,12 @@ export default function Sidebar({
                 {chatTitle(chat, me.id)}
               </p>
               <p className="truncate text-xs text-slate-400">
-                {messagePreview(chat.lastMessage, me.id, chat.participants)}
+                {messagePreview(chat.lastMessage, me.id, chat.participants).split(/(\p{Extended_Pictographic})/gu).map((part, index) => {
+                  if (/\p{Extended_Pictographic}/u.test(part)) {
+                    return <span key={index} className="emoji-icon">{part}</span>;
+                  }
+                  return part;
+                })}
               </p>
             </div>
             {chat.unreadCount > 0 && (

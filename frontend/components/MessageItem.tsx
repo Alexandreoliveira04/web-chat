@@ -70,7 +70,17 @@ export default function MessageItem({ message, chat, meId, autor, onEdit, onDele
             </div>
           </div>
         ) : (
-          <p className="whitespace-pre-wrap break-words text-sm">{apagada ? "mensagem apagada" : message.content}</p>
+          <p className="whitespace-pre-wrap break-words text-sm">
+            {apagada 
+              ? "mensagem apagada" 
+              : message.content.split(/(\p{Extended_Pictographic})/gu).map((part, index) => {
+                  if (/\p{Extended_Pictographic}/u.test(part)) {
+                    return <span key={index} className="emoji-icon">{part}</span>;
+                  }
+                  return part;
+                })
+            }
+          </p>
         )}
 
         <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-slate-400">
