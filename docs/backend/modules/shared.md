@@ -1,7 +1,6 @@
 # Módulo `shared`
 
 **Pacote:** `br.edu.webchat.shared`
-**Fase:** 1 — Fundação
 **Situação:** implementado
 
 Componentes de infraestrutura usados por todos os módulos. Deve conter apenas o que
@@ -180,5 +179,6 @@ desenvolvimento local:
 | `test` | `backend/src/test/resources/application-test.yml` | H2 em memória, Flyway desabilitado |
 
 O perfil `test` existe para que `mvnw test` rode sem exigir Docker. A contrapartida é
-que os testes não validam SQL específico do PostgreSQL — quando as migrations reais
-existirem, vale avaliar Testcontainers.
+que os testes não validam o SQL específico do PostgreSQL: o H2 gera o schema a partir das
+entidades e as migrations Flyway não são aplicadas. Se essa diferença começar a esconder
+defeito, o passo natural é Testcontainers com o PostgreSQL real.

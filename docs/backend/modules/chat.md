@@ -1,7 +1,6 @@
 # Módulo `chat`
 
 **Pacote:** `br.edu.webchat.chat`
-**Fases:** 4 (conversas), 5 (mensagens), 6 (WebSocket), 9 (grupos), 10 (editar/apagar)
 **Situação:** implementado — conversas individuais e em grupo, mensagens (envio, edição,
 exclusão), histórico, leitura por participante e tempo real
 
@@ -96,10 +95,10 @@ Message ──@ManyToOne(LAZY)──> User              (remetente)
 `ChatParticipant` usa chave composta `(chat, user)` via `@IdClass(ChatParticipantId)`, com as
 duas pontas mapeadas como `@Id @ManyToOne` — o mesmo par que é a PK da tabela.
 
-> **Decisão da Fase 9 (substitui a da Fase 4).** Até a Fase 6, `chat_participants` era só uma
+> **Decisão (grupos).** Antes dos grupos, `chat_participants` era só uma
 > tabela de junção (`@ManyToMany`), porque não tinha colunas próprias. Ela passou a ter
 > estado de leitura por participante (ver [leitura](#leitura-por-participante)) e virou
-> entidade, como a spec original previa.
+> entidade com identidade própria.
 
 **Consequência do mapeamento.** Como o `User` faz parte da chave do `ChatParticipant`, o
 Hibernate exige que ele esteja gerenciado na transação em que a conversa é gravada — com uma
@@ -129,7 +128,7 @@ consulta simples por chave.
 Campos avaliados e **não** adicionados: `created_by` fora de grupo (pouco uso), estado por
 participante como arquivar ou silenciar (fora do escopo),
 `last_message_at`/`last_message_preview` denormalizados (ver
-[listagem](#listar-minhas-conversas)). `type` e `name` entram na Fase 9, com os grupos.
+[listagem](#listar-minhas-conversas)). `type` e `name` entraram junto com os grupos.
 
 ## API REST
 
@@ -314,7 +313,7 @@ Regras:
 - a mensagem apagada continua podendo ser a `lastMessage` da conversa; o cliente mostra
   "mensagem apagada" ao ver `deletedAt` preenchido.
 
-> **Decisão da Fase 10.** Apagar de verdade (`DELETE` no banco) foi descartado: além de abrir
+> **Decisão (exclusão de mensagem).** Apagar de verdade (`DELETE` no banco) foi descartado: além de abrir
 > buracos no histórico dos outros participantes, apagaria a mensagem que serve de cursor de
 > paginação e o marcador de leitura de quem parou ali.
 
@@ -376,7 +375,7 @@ existe campo de leitura na mensagem:
 - ✓✓ = `lastReadByOthersMessageId` da conversa (o menor marcador entre os outros);
 - ler de novo não muda nada: o marcador só avança.
 
-> **Decisão da Fase 9.** Antes, a leitura era um `read_at` na própria mensagem. Isso funciona
+> **Decisão (leitura por participante).** Antes, a leitura era um `read_at` na própria mensagem. Isso funciona
 > em conversa de duas pessoas, mas quebra em grupo: o primeiro que abrisse a conversa
 > preencheria `read_at` e zeraria o contador de todo mundo. A migration `V8` converteu o
 > estado existente — para cada participante, a última mensagem recebida que estava marcada
@@ -457,42 +456,10 @@ participantes; filtrar direto no `join fetch` por `p.id = :userId` carregaria s�
 usuário em cada conversa. Pelo mesmo motivo de evitar N+1, `lastMessage` e `unreadCount`
 são buscados em lote para a lista inteira, e não conversa a conversa.
 
-## Front (páginas estáticas)
+## Interface
 
-`chat.js` passou a usar a API real (`ChatService` em `api.js`):
-
-- a barra lateral lista os colaboradores, com prévia da última mensagem ("Você: ..." quando
-  enviada pelo próprio usuário), contador de não lidas e ordenação por última atividade;
-  a busca filtra por nome;
-- clicar em um contato chama `POST /chats` (cria ou reaproveita), carrega o histórico e, se
-  houver não lidas, chama `PATCH .../read`;
-- "Carregar mensagens anteriores" usa `nextBefore`, mantendo a posição da rolagem;
-- mensagens enviadas mostram ✓ (enviada) ou ✓✓ (lida).
-
-Tempo real (`realtime.js`, cliente [STOMP.js](https://stomp-js.github.io/) 7 carregado por CDN):
-
-- ao abrir a página, conecta em `ws://<host>/ws` com o JWT e assina os quatro destinos
-  descritos em [WebSocket](#websocket);
-- **mensagem recebida** na conversa aberta aparece na hora e é marcada como lida (se a aba
-  estiver visível; senão, ao voltar para a aba); em outra conversa, incrementa o contador de
-  não lidas e atualiza a prévia; de uma conversa ainda desconhecida, recarrega a barra lateral;
-- **envio**: com o WebSocket conectado, publica em `/app/chats/{id}/messages` e a mensagem só é
-  desenhada quando o servidor a devolve em `/user/queue/messages` — um único caminho de
-  renderização, igual para quem envia e para as outras abas. Sem conexão, usa o `POST` REST.
-  Mensagens repetidas são ignoradas pelo `data-message-id`;
-- **recibo de leitura** troca ✓ por ✓✓ nas mensagens enviadas da conversa aberta; se quem leu
-  foi o próprio usuário (outra aba), zera o contador;
-- **presença** atualiza o anel verde no avatar da barra lateral e o "online/offline" no
-  cabeçalho da conversa;
-- **erros** do envio por WebSocket (`/user/queue/errors`) são exibidos em um alerta;
-- ao **reconectar** (tentativa a cada 5 s), recarrega a barra lateral e a conversa aberta, para
-  recuperar o que chegou enquanto a conexão estava fora; se o servidor recusar a autenticação
-  (token expirado), encerra a sessão e volta ao login.
-
-**Segurança:** todo conteúdo vindo da API (mensagens, nomes) é inserido com `textContent`,
-nunca `innerHTML`, inclusive o que chega pelo WebSocket. Quebras de linha são exibidas via
-`white-space: pre-wrap` no CSS. O campo de mensagem tem `maxlength="2000"`, o mesmo limite do
-backend, para que um envio por WebSocket não perca o texto por erro de validação.
+O consumo desta API pelo frontend Next.js — assinaturas, marcação de leitura, ✓✓ e
+reconexão — está em [frontend/arquitetura](../../frontend/architecture.md).
 
 ## Testes
 

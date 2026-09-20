@@ -1,7 +1,6 @@
 # Módulo `user`
 
 **Pacote:** `br.edu.webchat.user`
-**Fase:** 2 (+ 3.1 — papéis)
 **Situação:** implementado
 
 Responsável pelos colaboradores: cadastro, listagem, consulta, atualização e papel.

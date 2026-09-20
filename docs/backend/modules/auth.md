@@ -1,7 +1,6 @@
 # Módulo `auth`
 
 **Pacote:** `br.edu.webchat.auth`
-**Fase:** 3 (+ 3.1 — papéis e permissões)
 **Situação:** implementado
 
 Responsável pela autenticação (registro, login, emissão e validação de JWT) e pela
@@ -43,7 +42,7 @@ regras de cadastro (e-mail normalizado, 409 para duplicado, senha em BCrypt).
 O usuário criado é **sempre `USER`**. `CreateUserRequest` não tem campo `role`, então
 um `"role": "ADMIN"` no JSON é simplesmente ignorado.
 
-> Até o Módulo 0 o cadastro ficava em `POST /api/v1/users`. A rota foi removida e hoje
+> Antes da autenticação, o cadastro ficava em `POST /api/v1/users`. A rota foi removida e hoje
 > responde 401 sem token, como qualquer rota protegida.
 
 ## Login
@@ -80,7 +79,7 @@ com a mensagem `E-mail ou senha invalidos`. Distinguir os dois casos revelaria q
 e-mails estão cadastrados.
 
 O login **não** altera o `status` do usuário: ele permanece `OFFLINE`. A presença
-real será controlada pelo WebSocket (fase 6).
+real é controlada pelo WebSocket — ver [chat](chat.md#presença-online--offline).
 
 ## Requisições autenticadas
 
