@@ -13,7 +13,8 @@ public record UserResponse(
 		UserStatus status,
 		Role role,
 		Instant createdAt,
-		Instant updatedAt
+		Instant updatedAt,
+		String avatarUrl
 ) {
 
 	public static UserResponse from(User user) {
@@ -24,7 +25,8 @@ public record UserResponse(
 				user.getStatus(),
 				user.getRole(),
 				user.getCreatedAt(),
-				user.getUpdatedAt());
+				user.getUpdatedAt(),
+				user.getAvatarUrl());
 	}
 
 }

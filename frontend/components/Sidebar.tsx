@@ -16,7 +16,8 @@ interface Props {
   onStartDirect: (user: User) => void;
   onNewGroup: () => void;
   onLogout: () => void;
-  onUpdateMe?: (newName: string) => Promise<void>; // we'll need to pass this or use API directly
+  onUpdateMe?: (updated: User) => void;
+  onSearch?: (term: string) => void;
 }
 
 export default function Sidebar({
@@ -30,6 +31,7 @@ export default function Sidebar({
   onNewGroup,
   onLogout,
   onUpdateMe,
+  onSearch,
 }: Props) {
   const [busca, setBusca] = useState("");
   const [mostrarPerfil, setMostrarPerfil] = useState(false);
@@ -46,11 +48,27 @@ export default function Sidebar({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (onSearch) {
+      const timeout = setTimeout(() => {
+        onSearch(busca);
+      }, 500);
+      return () => clearTimeout(timeout);
+    }
+  }, [busca, onSearch]);
+
   const termo = busca.trim().toLowerCase();
-  const conversas = sortChats(chats).filter((chat) => chatTitle(chat, me.id).toLowerCase().includes(termo));
-  const semConversa = contactsWithoutMe(users, me.id)
-    .filter((user) => !chats.some((chat) => chat.type === "DIRECT" && chat.participants.some((p) => p.id === user.id)))
-    .filter((user) => user.name.toLowerCase().includes(termo));
+  const conversas = onSearch 
+    ? sortChats(chats) 
+    : sortChats(chats).filter((chat) => chatTitle(chat, me.id).toLowerCase().includes(termo));
+  
+  const semConversa = onSearch
+    ? contactsWithoutMe(users, me.id) // Opcional: pode implementar busca de usuários no backend também, mas aqui mantemos simples
+        .filter((user) => !chats.some((chat) => chat.type === "DIRECT" && chat.participants.some((p) => p.id === user.id)))
+        .filter((user) => user.name.toLowerCase().includes(termo))
+    : contactsWithoutMe(users, me.id)
+        .filter((user) => !chats.some((chat) => chat.type === "DIRECT" && chat.participants.some((p) => p.id === user.id)))
+        .filter((user) => user.name.toLowerCase().includes(termo));
 
   return (
     <aside className="flex w-80 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
@@ -60,7 +78,7 @@ export default function Sidebar({
           onClick={() => setPerfilDropdown(!perfilDropdown)}
           className="flex flex-1 items-center gap-3 text-left transition hover:opacity-80"
         >
-          <Avatar name={me.name} online />
+          <Avatar name={me.name} url={me.avatarUrl} online />
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium">{me.name}</p>
             <p className="text-xs text-slate-400">{conectado ? "conectado" : "reconectando..."}</p>
@@ -168,7 +186,7 @@ export default function Sidebar({
                 onClick={() => onStartDirect(user)}
                 className="flex w-full items-center gap-3 p-3 text-left transition hover:bg-slate-800/60"
               >
-                <Avatar name={user.name} online={user.status === "ONLINE"} size="sm" />
+                <Avatar name={user.name} url={user.avatarUrl} online={user.status === "ONLINE"} size="sm" />
                 <div className="min-w-0">
                   <p className="truncate text-sm">{user.name}</p>
                   <p className="truncate text-xs text-slate-500">{user.email}</p>

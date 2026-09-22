@@ -45,7 +45,7 @@ class AuthControllerTest {
 
 	private static final UserResponse ALEXANDRE = new UserResponse(
 			1L, "Alexandre Oliveira", "alexandre@email.com", UserStatus.OFFLINE, Role.USER,
-			Instant.parse("2026-09-08T22:00:00Z"), Instant.parse("2026-09-08T22:00:00Z"));
+			Instant.parse("2026-09-08T22:00:00Z"), Instant.parse("2026-09-08T22:00:00Z"), null);
 
 	@Test
 	void registerDeveRetornar201ComLocation() throws Exception {

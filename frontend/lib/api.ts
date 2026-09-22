@@ -5,6 +5,13 @@ import type { ApiError, Chat, MessageHistory, Message, User } from './types';
 // .env.development aponta para o backend em outra porta.
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
 
+export function getAssetUrl(path: string): string {
+  if (!path) return path;
+  if (path.startsWith('http')) return path;
+  const baseUrl = API_URL.replace('/api/v1', '');
+  return `${baseUrl}${path}`;
+}
+
 const TOKEN_KEY = 'webchat_token';
 
 export const tokenStorage = {
@@ -32,12 +39,18 @@ function describe(error: ApiError): string {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = tokenStorage.get();
 
+  const isFormData = options.body instanceof FormData;
+  const customHeaders = { ...options.headers } as Record<string, string>;
+  
+  if (!isFormData && !customHeaders['Content-Type']) {
+    customHeaders['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
+      ...customHeaders,
     },
   });
 
@@ -91,10 +104,15 @@ export const usersApi = {
   me: () => request<User>('/users/me'),
   list: () => request<User[]>('/users'),
   update: (name: string) => request<User>('/users/me', { method: 'PUT', body: body({ name }) }),
+  uploadAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<User>('/users/me/avatar', { method: 'POST', body: formData });
+  },
 };
 
 export const chatsApi = {
-  list: () => request<Chat[]>('/chats'),
+  list: (search?: string) => request<Chat[]>(`/chats${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   byId: (chatId: number) => request<Chat>(`/chats/${chatId}`),
   openDirect: (participantId: number) =>
     request<Chat>('/chats', { method: 'POST', body: body({ participantId }) }),

@@ -8,6 +8,7 @@ export interface User {
   email: string;
   status: UserStatus;
   role: Role;
+  avatarUrl?: string;
 }
 
 export interface Participant {
@@ -15,6 +16,7 @@ export interface Participant {
   name: string;
   email: string;
   status: UserStatus;
+  avatarUrl?: string;
 }
 
 export interface Message {

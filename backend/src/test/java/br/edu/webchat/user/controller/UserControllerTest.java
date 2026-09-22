@@ -44,7 +44,7 @@ class UserControllerTest {
 
 	private static final UserResponse ALEXANDRE = new UserResponse(
 			1L, "Alexandre Oliveira", "alexandre@email.com", UserStatus.OFFLINE, Role.USER,
-			Instant.parse("2026-09-08T22:00:00Z"), Instant.parse("2026-09-08T22:00:00Z"));
+			Instant.parse("2026-09-08T22:00:00Z"), Instant.parse("2026-09-08T22:00:00Z"), null);
 
 	private static final Authentication LOGADO =
 			new UsernamePasswordAuthenticationToken("alexandre@email.com", null, List.of());
@@ -86,7 +86,7 @@ class UserControllerTest {
 	@Test
 	void putMeDeveAtualizarOUsuarioAutenticado() throws Exception {
 		UserResponse atualizado = new UserResponse(1L, "Alexandre Oliveira Silva",
-				"alexandre@email.com", UserStatus.OFFLINE, Role.USER, ALEXANDRE.createdAt(), Instant.now());
+				"alexandre@email.com", UserStatus.OFFLINE, Role.USER, ALEXANDRE.createdAt(), Instant.now(), null);
 		when(userService.updateMe(eq("alexandre@email.com"), any(UpdateUserRequest.class))).thenReturn(atualizado);
 
 		mockMvc.perform(put("/api/v1/users/me")
@@ -114,7 +114,7 @@ class UserControllerTest {
 	@Test
 	void putPorIdDeveAtualizarONome() throws Exception {
 		UserResponse atualizado = new UserResponse(1L, "Alexandre Oliveira Silva",
-				"alexandre@email.com", UserStatus.OFFLINE, Role.USER, ALEXANDRE.createdAt(), Instant.now());
+				"alexandre@email.com", UserStatus.OFFLINE, Role.USER, ALEXANDRE.createdAt(), Instant.now(), null);
 		when(userService.update(eq(1L), any(UpdateUserRequest.class))).thenReturn(atualizado);
 
 		mockMvc.perform(put("/api/v1/users/1")
@@ -129,7 +129,7 @@ class UserControllerTest {
 	@Test
 	void patchRoleDeveAlterarOPapel() throws Exception {
 		UserResponse promovido = new UserResponse(1L, "Alexandre Oliveira", "alexandre@email.com",
-				UserStatus.OFFLINE, Role.ADMIN, ALEXANDRE.createdAt(), Instant.now());
+				UserStatus.OFFLINE, Role.ADMIN, ALEXANDRE.createdAt(), Instant.now(), null);
 		when(userService.changeRole(1L, Role.ADMIN, "admin@email.com")).thenReturn(promovido);
 
 		mockMvc.perform(patch("/api/v1/users/1/role")
