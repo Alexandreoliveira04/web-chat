@@ -1,69 +1,27 @@
-# Documentação dos módulos
+# Documentação
 
-Documentação de referência do backend do Web Chat, organizada por módulo.
+Documentação técnica do Web Chat. Para instalar e rodar, ver o [README](../README.md).
 
-A fonte de verdade do projeto é a [WEB-CHAT-SPEC.md](../WEB-CHAT-SPEC.md). Estes
-documentos detalham cada módulo e registram decisões tomadas durante a
-implementação; em caso de divergência, a spec prevalece.
+## Backend
 
-Para instalar, rodar e testar o projeto, ver o [README](../README.md).
+API REST + WebSocket em Java 17 e Spring Boot, organizada como monólito modular.
 
-## Módulos
+- [Arquitetura](backend/architecture.md) — stack, módulos, camadas, convenções, configuração e testes
+- Módulos:
+  - [shared](backend/modules/shared.md) — configuração comum, erros, health check
+  - [user](backend/modules/user.md) — colaboradores, perfil, status e papel
+  - [auth](backend/modules/auth.md) — registro, login, JWT e autorização
+  - [chat](backend/modules/chat.md) — conversas, grupos, mensagens, histórico e WebSocket
 
-| Módulo | Responsabilidade | Fase | Situação |
-| ------ | ---------------- | ---- | -------- |
-| [shared](shared.md) | Configuração, tratamento de erros, health check | 1 | Implementado |
-| [user](user.md) | Colaboradores: cadastro, consulta, perfil, status, papel | 2, 3.1 | Implementado |
-| [auth](auth.md) | Registro, login, JWT, Spring Security, autorização por papéis | 3, 3.1 | Implementado |
-| [chat](chat.md) | Conversas, grupos, mensagens, histórico, WebSocket | 4–6, 9–10 | Implementado |
-| [frontend](frontend.md) | Interface web em Next.js | 7 | Implementado |
+## Frontend
 
-## Convenções comuns
+Interface em Next.js 16 + TypeScript, publicada como export estático e servida pelo backend.
 
-As regras abaixo valem para todos os módulos e não são repetidas em cada documento.
+- [Arquitetura](frontend/architecture.md) — stack, comunicação com a API, tempo real e build
+- Módulos:
+  - [páginas](frontend/modules/pages.md) — rotas, estado e ciclo de vida
+  - [componentes](frontend/modules/components.md) — barra lateral, janela de conversa, modais
+  - [lib](frontend/modules/libs.md) — cliente REST, STOMP, tipos e formatação
 
-### Camadas
-
-Cada módulo segue MVC, com o fluxo:
-
-```text
-Controller -> Service -> Repository -> Database
-```
-
-- **Controller**: recebe a requisição, valida a entrada e devolve a resposta HTTP.
-  Não contém regra de negócio.
-- **Service**: regras de negócio, validações de negócio e transações.
-- **Repository**: acesso a dados via Spring Data JPA.
-- **Entity**: representação persistida. **Nunca é exposta diretamente pela API.**
-- **DTO**: contrato de entrada e saída da API.
-
-### API
-
-- Prefixo: `/api/v1`
-- Recursos no plural: `/users`, `/chats`, `/messages`
-- JSON em `camelCase`
-- IDs numéricos: `Long` no Java, `BIGINT` no PostgreSQL, gerados pelo banco
-- Datas em `Instant` / `OffsetDateTime` (ISO-8601, UTC), nunca `java.util.Date`
-
-### Validação
-
-Entrada validada com Bean Validation (`@Valid` nos controllers). Regras de negócio
-permanecem nos services. Erros de validação são traduzidos automaticamente pelo
-tratamento global — ver [shared](shared.md#erros-de-validação).
-
-### Erros
-
-Todas as respostas de erro usam o formato único `ApiError`, descrito em
-[shared](shared.md#formato-de-erro).
-
-### Autenticação
-
-Salvo o que estiver listado como público em [auth](auth.md#endpoints), todo endpoint
-exige `Authorization: Bearer <token>`. Algumas rotas exigem também o papel `ADMIN` — ver
-[auth](auth.md#autorização-por-papéis).
-
-### Banco
-
-O schema é versionado exclusivamente por migrations Flyway em
-`backend/src/main/resources/db/migration`. O Hibernate roda em `ddl-auto: validate` e nunca
-altera o banco. Cada módulo cria as próprias migrations na sua fase.
+Cada documento registra também as decisões tomadas durante a implementação e as limitações
+conhecidas da parte que descreve.
