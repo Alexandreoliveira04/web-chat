@@ -14,14 +14,14 @@ export default function Avatar({ name, url, online = false, size = "md" }: Props
   if (size === "lg") dimensao = "h-32 w-32 text-3xl";
 
   return (
-    <div className={`relative shrink-0 ${dimensao}`}>
+    <div className={`relative shrink-0 isolate transform-gpu ${dimensao}`}>
       <div
         className={`h-full w-full flex items-center justify-center rounded-full bg-slate-700 font-semibold text-slate-100 overflow-hidden avatar-container`}
       >
         {url ? (
           <img src={getAssetUrl(url)} alt={name} className="h-full w-full object-cover" />
         ) : (
-          initials(name)
+          <span>{initials(name)}</span>
         )}
       </div>
       {online && (

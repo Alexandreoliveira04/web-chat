@@ -4,6 +4,8 @@ import { useState } from "react";
 import { formatTime } from "@/lib/format";
 import type { Chat, Message, Participant } from "@/lib/types";
 
+import Avatar from "./Avatar";
+
 interface Props {
   message: Message;
   chat: Chat;
@@ -33,9 +35,14 @@ export default function MessageItem({ message, chat, meId, autor, onEdit, onDele
   }
 
   return (
-    <div className={`group flex ${minha ? "justify-end" : "justify-start"}`}>
+    <div className={`group flex gap-2 ${minha ? "justify-end" : "justify-start"} items-end`}>
+      {!minha && autor && (
+        <div className="mb-1 hidden sm:block">
+          <Avatar name={autor.name} online={autor.status === "ONLINE"} size="sm" />
+        </div>
+      )}
       <div
-        className={`max-w-[70%] rounded-2xl px-4 py-2 ${minha ? "bg-emerald-800/80" : "bg-slate-800"} ${
+        className={`max-w-[70%] rounded-2xl px-4 py-2 ${minha ? "bg-emerald-800/80 rounded-br-sm" : "bg-slate-800 rounded-bl-sm"} ${
           apagada ? "italic text-slate-400" : ""
         }`}
       >
