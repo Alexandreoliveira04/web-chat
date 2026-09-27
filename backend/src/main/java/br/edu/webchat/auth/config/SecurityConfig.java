@@ -44,7 +44,7 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.GET, "/api/v1/health").permitAll()
 						.requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/register").permitAll()
-						.requestMatchers(HttpMethod.GET, "/", "/*.html", "/*.txt", "/*.svg", "/*.jpg", "/*.jpeg", "/*.png", "/favicon.ico",
+						.requestMatchers(HttpMethod.GET, "/", "/*.html", "/*.txt", "/*.svg", "/*.jpg", "/*.jpeg", "/*.png", "/*.webp", "/*.gif", "/favicon.ico",
 								"/_next/**", "/chat/**", "/login/**", "/uploads/**").permitAll()
 						.requestMatchers("/ws", "/ws/**").permitAll()
 						.requestMatchers(HttpMethod.PUT, "/api/v1/users/me").authenticated()
