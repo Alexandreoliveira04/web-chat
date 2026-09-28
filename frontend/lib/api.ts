@@ -142,3 +142,11 @@ export const messagesApi = {
   markAsRead: (chatId: number) =>
     request<{ markedAsRead: number }>(`/chats/${chatId}/messages/read`, { method: 'PATCH' }),
 };
+
+export const filesApi = {
+  upload: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{ url: string }>('/files/upload', { method: 'POST', body: formData });
+  },
+};

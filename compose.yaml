@@ -16,6 +16,15 @@ services:
       timeout: 5s
       retries: 5
 
+  gcs:
+    image: fsouza/fake-gcs-server
+    container_name: web-chat-gcs
+    ports:
+      - "4443:4443"
+    command: -scheme http -public-host localhost:4443
+    volumes:
+      - gcs_data:/data
+
   app:
     build: .
     container_name: web-chat-app
@@ -23,8 +32,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      gcs:
+        condition: service_started
     environment:
       DB_HOST: postgres
+      GCS_HOST: http://gcs:4443
+      GCS_BUCKET: webchat-files
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-nao-use-em-producao-0123456789}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@webchat.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
@@ -40,3 +53,4 @@ services:
 
 volumes:
   postgres_data:
+  gcs_data:
