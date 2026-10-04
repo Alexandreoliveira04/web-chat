@@ -382,10 +382,8 @@ export default function ChatPage() {
           authApi.logout();
           router.replace("/login");
         }}
-        onUpdateMe={async (name) => {
-          const updated = await usersApi.update(name);
-          setMe(updated);
-        }}
+        onUpdateMe={(updated) => setMe(updated)}
+        onSearch={(term) => chatsApi.list(term).then(setChats).catch(console.error)}
       />
 
       {activeChat ? (

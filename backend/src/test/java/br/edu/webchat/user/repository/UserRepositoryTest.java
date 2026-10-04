@@ -3,6 +3,7 @@ package br.edu.webchat.user.repository;
 import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.entity.UserStatus;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -20,6 +21,13 @@ class UserRepositoryTest {
 
 	@Autowired
 	private UserRepository userRepository;
+
+	// Garante uma tabela vazia mesmo que outra classe de teste tenha deixado dados no H2
+	// compartilhado. Roda dentro da transacao do @DataJpaTest, que e desfeita ao final.
+	@BeforeEach
+	void comecarComTabelaVazia() {
+		userRepository.deleteAll();
+	}
 
 	@Test
 	void devePersistirComIdNumericoGeradoETimestamps() {

@@ -7,11 +7,12 @@ public record ParticipantResponse(
 		Long id,
 		String name,
 		String email,
-		UserStatus status
+		UserStatus status,
+		String avatarUrl
 ) {
 
 	public static ParticipantResponse from(User user) {
-		return new ParticipantResponse(user.getId(), user.getName(), user.getEmail(), user.getStatus());
+		return new ParticipantResponse(user.getId(), user.getName(), user.getEmail(), user.getStatus(), user.getAvatarUrl());
 	}
 
 }

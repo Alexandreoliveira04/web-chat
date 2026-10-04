@@ -10,10 +10,10 @@ pelo próprio backend — um processo, um artefato.
 
 ```text
 web-chat/
-├── backend/     API REST + WebSocket (Maven)
+├── backend/     API REST + WebSocket (Maven) + GCS Uploads
 ├── frontend/    interface em Next.js
 ├── docs/        documentação técnica
-├── compose.yaml PostgreSQL (e a aplicação, no profile "app")
+├── compose.yaml PostgreSQL, fake-gcs-server e a aplicação (profile "app")
 └── Dockerfile   build do front + backend em uma imagem só
 ```
 
@@ -31,13 +31,13 @@ O Maven não precisa estar instalado: o wrapper (`mvnw`) acompanha o projeto em 
 
 ## Rodando localmente
 
-### 1. Banco
+### 1. Banco e Storage (GCS Emulator)
 
 ```bash
 docker compose up -d
 ```
 
-Sobe um PostgreSQL 16 em `localhost:5432`, com banco, usuário e senha `webchat`. Para parar,
+Sobe um PostgreSQL 16 em `localhost:5432` e um **Emulador Oficial do Google Cloud Storage** (`fake-gcs-server`) em `localhost:4443` para upload de fotos e vídeos. Para parar,
 `docker compose down`.
 
 ### 2. Backend

@@ -177,8 +177,11 @@ public class ChatService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<ChatResponse> findMyChats(String authenticatedEmail) {
+	public List<ChatResponse> findMyChats(String authenticatedEmail, String query) {
 		User me = findAuthenticatedUser(authenticatedEmail);
+		if (query != null && !query.isBlank()) {
+			return toResponses(chatRepository.searchAllByParticipantIdAndQuery(me.getId(), query), me);
+		}
 		return toResponses(chatRepository.findAllByParticipantId(me.getId()), me);
 	}
 

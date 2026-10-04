@@ -20,3 +20,9 @@ spring:
 jwt:
   secret: segredo-de-teste-com-tamanho-suficiente-para-hs256
   expiration: 3600
+
+# Cloud Storage: nos testes o bucket nao e criado na subida, entao a aplicacao
+# sobe sem o emulador fake-gcs-server. O upload em si e testado com um Storage
+# falso (mock) em FileStorageServiceTest.
+gcs:
+  init-bucket: false

@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import MessageItem from "./MessageItem";
+import ChatDetailsSidebar from "./ChatDetailsSidebar";
 import { chatSubtitle, chatTitle } from "@/lib/format";
 import type { Chat, Message, User } from "@/lib/types";
+import { filesApi } from "@/lib/api";
 
 interface Props {
   chat: Chat;
@@ -42,6 +44,29 @@ export default function ChatWindow({
 
   const [mostrarEmoji, setMostrarEmoji] = useState(false);
   const emojiContainerRef = useRef<HTMLDivElement>(null);
+  const [showInfo, setShowInfo] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploading(true);
+      const data = await filesApi.upload(file);
+      await onSend(data.url);
+    } catch (error) {
+      alert("Erro ao enviar arquivo.");
+      console.error(error);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
 
   useEffect(() => {
     import("emoji-picker-element");
@@ -138,16 +163,31 @@ export default function ChatWindow({
 </svg>`.trim());
 
   return (
-    <section className="flex flex-1 flex-col bg-slate-950">
-      <header className="flex items-center gap-3 border-b border-slate-800 bg-slate-900 p-4">
-        <Avatar name={chatTitle(chat, me.id)} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium">{chatTitle(chat, me.id)}</p>
-          <p className="text-xs text-slate-400">{chatSubtitle(chat, me.id)}</p>
-        </div>
+    <div className="flex flex-1 overflow-hidden">
+      <section className="flex flex-1 flex-col bg-slate-950">
+        <header className="flex items-center gap-3 border-b border-slate-800 bg-slate-900 p-4">
+          <button type="button" onClick={() => setShowInfo(true)} className="transition hover:opacity-80 shrink-0">
+            <Avatar name={chatTitle(chat, me.id)} />
+          </button>
+          <div 
+            className="min-w-0 flex-1 cursor-pointer transition hover:opacity-80" 
+            onClick={() => setShowInfo(true)}
+          >
+            <p className="truncate font-medium">{chatTitle(chat, me.id)}</p>
+            <p className="text-xs text-slate-400">{chatSubtitle(chat, me.id)}</p>
+          </div>
+
+          <button 
+            type="button" 
+            onClick={() => setShowInfo(true)}
+            className="mx-2 hidden items-center gap-1.5 rounded-full bg-slate-800/80 px-4 py-1.5 text-xs font-medium text-slate-400 transition hover:bg-slate-700 hover:text-slate-200 lg:flex"
+          >
+            <span>mídias, imagens e links</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
         
-        <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1">
-          <input
+          <div className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1">
+            <input
             type="text"
             placeholder="Buscar mensagem..."
             value={busca}
@@ -234,6 +274,31 @@ export default function ChatWindow({
             </div>
           )}
         </div>
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          accept="image/*,video/*,.pdf,.doc,.docx" 
+          onChange={handleFileUpload} 
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-800 text-slate-400 transition hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-50"
+          title="Anexar arquivo"
+        >
+          {uploading ? (
+            <svg className="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            </svg>
+          )}
+        </button>
         <input
           className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 outline-none focus:border-emerald-500"
           placeholder="Mensagem"
@@ -248,6 +313,16 @@ export default function ChatWindow({
           Enviar
         </button>
       </form>
-    </section>
+      </section>
+
+      {showInfo && (
+        <ChatDetailsSidebar 
+          chat={chat} 
+          meId={me.id} 
+          messages={messages} 
+          onClose={() => setShowInfo(false)} 
+        />
+      )}
+    </div>
   );
 }

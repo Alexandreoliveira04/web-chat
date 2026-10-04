@@ -22,10 +22,12 @@ COPY --from=frontend /frontend/out/ /frontend/out/
 RUN mvn -B -DskipTests package
 
 # Runtime: apenas o JRE e o jar, com usuario sem privilegios.
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-RUN addgroup -S webchat && adduser -S webchat -G webchat
+RUN addgroup --system webchat && adduser --system --ingroup webchat webchat && \
+    mkdir -p /app/uploads && \
+    chown -R webchat:webchat /app/uploads
 
 COPY --from=build /build/target/web-chat-*.jar app.jar
 USER webchat

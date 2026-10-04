@@ -35,8 +35,8 @@ public class ChatController {
 	}
 
 	@GetMapping
-	public List<ChatResponse> findMyChats(Authentication authentication) {
-		return chatService.findMyChats(authentication.getName());
+	public List<ChatResponse> findMyChats(Authentication authentication, @org.springframework.web.bind.annotation.RequestParam(required = false) String search) {
+		return chatService.findMyChats(authentication.getName(), search);
 	}
 
 	@PostMapping

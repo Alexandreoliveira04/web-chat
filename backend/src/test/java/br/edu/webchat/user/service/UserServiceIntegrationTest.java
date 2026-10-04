@@ -7,6 +7,7 @@ import br.edu.webchat.user.dto.UserResponse;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.entity.UserStatus;
 import br.edu.webchat.user.repository.UserRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +35,10 @@ class UserServiceIntegrationTest {
 	@Autowired
 	private PasswordEncoder passwordEncoder;
 
+	// Limpa antes e depois: o H2 em memoria e compartilhado entre as classes de teste,
+	// entao o que uma classe grava (e commita) nao pode sobrar para a proxima.
 	@BeforeEach
+	@AfterEach
 	void limparBase() {
 		userRepository.deleteAll();
 	}

@@ -12,6 +12,7 @@ API REST + WebSocket em Java 17 e Spring Boot, organizada como monólito modular
   - [user](backend/modules/user.md) — colaboradores, perfil, status e papel
   - [auth](backend/modules/auth.md) — registro, login, JWT e autorização
   - [chat](backend/modules/chat.md) — conversas, grupos, mensagens, histórico e WebSocket
+  - [storage](backend/modules/storage.md) — uploads, imagens, vídeos e integração GCS
 
 ## Frontend
 
