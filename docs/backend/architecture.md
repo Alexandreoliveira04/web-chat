@@ -52,6 +52,7 @@ que o próprio Spring Boot serve, então sobe um container só. Ver
 | [user](modules/user.md) | Colaboradores: cadastro, consulta, perfil, status, papel |
 | [auth](modules/auth.md) | Registro, login, JWT, Spring Security, autorização por papéis |
 | [chat](modules/chat.md) | Conversas, grupos, mensagens, histórico, leitura, WebSocket |
+| [storage](modules/storage.md) | Integração Google Cloud Storage (GCS) nativa, emulador local e upload de mídias |
 
 Dependências permitidas entre eles:
 

@@ -34,7 +34,15 @@ export function messagePreview(message: Message | null, meId: number, participan
         ? `${participants.find((p) => p.id === message.senderId)?.name.split(" ")[0] ?? ""}: `
         : "";
 
-  return message.deletedAt ? `${autor}mensagem apagada` : `${autor}${message.content}`;
+  if (message.deletedAt) {
+    return `${autor}mensagem apagada`;
+  }
+
+  if (message.content.match(/^http.*?\.(jpg|jpeg|png|gif|webp)(?:\?.*)?$/i)) {
+    return `${autor}📷 Imagem`;
+  }
+
+  return `${autor}${message.content}`;
 }
 
 export function initials(name: string): string {
