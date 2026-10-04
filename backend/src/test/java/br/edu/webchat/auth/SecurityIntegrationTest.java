@@ -6,6 +6,7 @@ import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.repository.UserRepository;
 import br.edu.webchat.user.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,14 @@ class SecurityIntegrationTest {
 
 	private Long userId;
 	private Long adminId;
+
+	// Ao final de cada teste, remove os usuarios criados: o H2 em memoria e compartilhado
+	// entre as classes, e sem isso o UserRepositoryTest (que roda depois) encontrava
+	// o e-mail ja cadastrado e falhava por violacao de UNIQUE.
+	@AfterEach
+	void limparUsuarios() {
+		userRepository.deleteAll();
+	}
 
 	@BeforeEach
 	void prepararUsuarios() {
