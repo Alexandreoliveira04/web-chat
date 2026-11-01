@@ -5,24 +5,20 @@ import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
 import br.edu.webchat.user.dto.CreateUserRequest;
 import br.edu.webchat.user.dto.UpdateUserRequest;
+import br.edu.webchat.user.dto.ProfileResponse;
 import br.edu.webchat.user.dto.UserResponse;
 import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.entity.UserStatus;
+import br.edu.webchat.storage.service.FileStorageService;
 import br.edu.webchat.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.util.StringUtils;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.UUID;
 import java.util.List;
 
 @Service
@@ -31,10 +27,15 @@ public class UserService {
 	private static final int MIN_PASSWORD_LENGTH = 6;
 	private final UserRepository userRepository;
 	private final PasswordEncoder passwordEncoder;
+	private final ApplicationEventPublisher events;
+	private final FileStorageService fileStorageService;
 
-	public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+	public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, ApplicationEventPublisher events,
+			FileStorageService fileStorageService) {
 		this.userRepository = userRepository;
 		this.passwordEncoder = passwordEncoder;
+		this.events = events;
+		this.fileStorageService = fileStorageService;
 	}
 
 	@Transactional
@@ -47,7 +48,9 @@ public class UserService {
 
 		User user = new User(request.name().trim(), email, passwordEncoder.encode(request.password()));
 
-		return UserResponse.from(userRepository.save(user));
+		UserResponse created = UserResponse.from(userRepository.save(user));
+		events.publishEvent(new UserCreatedEvent(created));
+		return created;
 	}
 
 	@Transactional(readOnly = true)
@@ -125,32 +128,19 @@ public class UserService {
 	public UserResponse uploadAvatar(String authenticatedEmail, MultipartFile file) {
 		User user = findEntityByEmail(authenticatedEmail);
 
-		try {
-			Path uploadDir = Paths.get("uploads", "avatars");
-			if (!Files.exists(uploadDir)) {
-				Files.createDirectories(uploadDir);
-			}
-
-			String originalFilename = StringUtils.cleanPath(file.getOriginalFilename() != null ? file.getOriginalFilename() : "avatar.png");
-			String extension = originalFilename.contains(".") ? originalFilename.substring(originalFilename.lastIndexOf(".")) : ".png";
-			String newFilename = UUID.randomUUID().toString() + extension;
-			Path targetLocation = uploadDir.resolve(newFilename);
-			
-			Files.copy(file.getInputStream(), targetLocation, StandardCopyOption.REPLACE_EXISTING);
-			
-			// Constrói a URL que será servida pelo WebConfig (ex: /uploads/avatars/uuid.png)
-			String avatarUrl = "/uploads/avatars/" + newFilename;
-			user.setAvatarUrl(avatarUrl);
-			
-			return UserResponse.from(userRepository.saveAndFlush(user));
-		} catch (IOException ex) {
-			throw new RuntimeException("Falha ao salvar a imagem do avatar", ex);
-		}
+		user.setAvatarUrl(fileStorageService.uploadImage(file));
+		return saveProfile(user);
 	}
 
 	private UserResponse rename(User user, UpdateUserRequest request) {
 		user.setName(request.name().trim());
-		return UserResponse.from(userRepository.saveAndFlush(user));
+		return saveProfile(user);
+	}
+
+	private UserResponse saveProfile(User user) {
+		User saved = userRepository.saveAndFlush(user);
+		events.publishEvent(new ProfileChangedEvent(ProfileResponse.from(saved)));
+		return UserResponse.from(saved);
 	}
 
 	private User findEntityById(Long id) {

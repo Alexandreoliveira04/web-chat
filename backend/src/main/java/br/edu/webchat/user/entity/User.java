@@ -44,7 +44,7 @@ public class User {
 	@Column(name = "updated_at", nullable = false)
 	private Instant updatedAt;
 
-	@Column(name = "avatar_url")
+	@Column(name = "avatar_url", length = 500)
 	private String avatarUrl;
 
 	protected User() {}

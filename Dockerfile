@@ -25,9 +25,7 @@ RUN mvn -B -DskipTests package
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-RUN addgroup --system webchat && adduser --system --ingroup webchat webchat && \
-    mkdir -p /app/uploads && \
-    chown -R webchat:webchat /app/uploads
+RUN addgroup --system webchat && adduser --system --ingroup webchat webchat
 
 COPY --from=build /build/target/web-chat-*.jar app.jar
 USER webchat

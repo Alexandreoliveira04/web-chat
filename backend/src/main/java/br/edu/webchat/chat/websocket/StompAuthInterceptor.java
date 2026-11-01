@@ -71,11 +71,15 @@ public class StompAuthInterceptor implements ChannelInterceptor {
 
 	private static boolean isAllowedSubscription(String destination) {
 		return destination != null && (destination.equals(WebSocketConfig.PRESENCE_TOPIC)
+				|| destination.equals(WebSocketConfig.PROFILES_TOPIC)
+				|| destination.equals(WebSocketConfig.USERS_TOPIC)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.MESSAGES_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.READ_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.MESSAGE_UPDATES_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CHATS_QUEUE)
-				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.ERRORS_QUEUE));
+				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.ERRORS_QUEUE)
+				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CALLS_QUEUE)
+				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CALL_SIGNAL_QUEUE));
 	}
 
 	private static boolean isAllowedSend(String destination) {
