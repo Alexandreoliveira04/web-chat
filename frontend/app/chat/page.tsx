@@ -7,8 +7,12 @@ import Sidebar from "@/components/Sidebar";
 import ChatWindow from "@/components/ChatWindow";
 import NewGroupModal from "@/components/NewGroupModal";
 import GroupSettingsModal from "@/components/GroupSettingsModal";
+import IncomingCall from "@/components/IncomingCall";
+import CallBar from "@/components/CallBar";
 import { authApi, chatsApi, messagesApi, tokenStorage, usersApi } from "@/lib/api";
 import { connectRealtime, sendOverWebSocket } from "@/lib/realtime";
+import { otherParticipant } from "@/lib/format";
+import { useVoiceCall } from "@/lib/useVoiceCall";
 import type { Chat, Message, User } from "@/lib/types";
 
 export default function ChatPage() {
@@ -34,11 +38,31 @@ export default function ChatPage() {
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? null;
 
+  const chamada = useVoiceCall({
+    clientRef,
+    meId: me?.id ?? null,
+    nameOf: (userId) => users.find((user) => user.id === userId)?.name ?? "Contato",
+    onNotice: setErro,
+  });
+  const chamadaRef = useRef(chamada);
+  useEffect(() => {
+    chamadaRef.current = chamada;
+  });
+  const chatDaChamada = chats.find((chat) => chat.id === chamada.state.chatId) ?? null;
+  const contatoDaChamada =
+    chatDaChamada?.participants.find((participante) => participante.id === chamada.state.peerId) ??
+    users.find((user) => user.id === chamada.state.peerId);
+
   const carregarConversas = useCallback(async () => {
     const [listaUsuarios, listaChats] = await Promise.all([usersApi.list(), chatsApi.list()]);
     setUsers(listaUsuarios);
     setChats(listaChats);
     return listaChats;
+  }, []);
+
+  // Precisa ser estável: a Sidebar refaz a busca sempre que esta função muda.
+  const buscarConversas = useCallback((termo: string) => {
+    chatsApi.list(termo).then(setChats).catch(console.error);
   }, []);
 
   const marcarComoLida = useCallback(async (chatId: number) => {
@@ -117,6 +141,7 @@ export default function ChatPage() {
         onConnect: (reconectado) => {
           setConectado(true);
           if (reconectado) {
+            chamadaRef.current.reset();
             carregarConversas();
             const atual = activeChatIdRef.current;
             if (atual) {
@@ -205,6 +230,19 @@ export default function ChatPage() {
             })),
           );
         },
+        onProfile: (perfil) => {
+          const atualizar = <T extends { id: number; name: string; avatarUrl?: string }>(pessoa: T): T =>
+            pessoa.id === perfil.id ? { ...pessoa, name: perfil.name, avatarUrl: perfil.avatarUrl ?? undefined } : pessoa;
+
+          setUsers((atual) => atual.map(atualizar));
+          setChats((atual) => atual.map((chat) => ({ ...chat, participants: chat.participants.map(atualizar) })));
+          setMe((atual) => (atual ? atualizar(atual) : atual));
+        },
+        onUserCreated: (novo) => {
+          setUsers((atual) => (atual.some((user) => user.id === novo.id) ? atual : [...atual, novo]));
+        },
+        onCallEvent: (evento) => chamadaRef.current.handleEvent(evento),
+        onCallSignal: (sinal) => chamadaRef.current.handleSignal(sinal),
         onError: (mensagem) => setErro(mensagem),
       });
     })();
@@ -378,12 +416,24 @@ export default function ChatPage() {
         onStartDirect={iniciarConversaDireta}
         onNewGroup={() => setMostrarNovoGrupo(true)}
         onLogout={() => {
+          chamada.hangUp();
           clientRef.current?.deactivate();
           authApi.logout();
           router.replace("/login");
         }}
         onUpdateMe={(updated) => setMe(updated)}
-        onSearch={(term) => chatsApi.list(term).then(setChats).catch(console.error)}
+        onSearch={buscarConversas}
+        footer={
+          chamada.state.status !== "idle" && chamada.state.status !== "incoming" ? (
+            <CallBar
+              call={chamada.state}
+              peer={contatoDaChamada}
+              onOpenChat={() => chatDaChamada && abrirConversa(chatDaChamada)}
+              onToggleMute={chamada.toggleMute}
+              onHangUp={chamada.hangUp}
+            />
+          ) : null
+        }
       />
 
       {activeChat ? (
@@ -398,6 +448,11 @@ export default function ChatPage() {
           onEdit={(messageId, content) => executar(() => messagesApi.edit(activeChat.id, messageId, content))}
           onDelete={(messageId) => executar(() => messagesApi.remove(activeChat.id, messageId))}
           onOpenSettings={() => setMostrarParticipantes(true)}
+          emChamada={chamada.state.status !== "idle"}
+          onStartCall={() => {
+            const contato = otherParticipant(activeChat, me.id);
+            if (contato) chamada.start(activeChat.id, contato.id);
+          }}
         />
       ) : (
         <section 
@@ -434,6 +489,10 @@ export default function ChatPage() {
         </div>
       )}
 
+      {chamada.state.status === "incoming" && (
+        <IncomingCall caller={contatoDaChamada} onAccept={chamada.accept} onDecline={chamada.hangUp} />
+      )}
+
       {mostrarNovoGrupo && (
         <NewGroupModal
           me={me}
@@ -454,6 +513,7 @@ export default function ChatPage() {
           users={users}
           onClose={() => setMostrarParticipantes(false)}
           onRename={(nome) => executar(() => chatsApi.rename(activeChat.id, nome)).then(() => recarregarConversa(activeChat.id))}
+          onChangeAvatar={(foto) => chatsApi.uploadAvatar(activeChat.id, foto).then(() => recarregarConversa(activeChat.id))}
           onAdd={(userId) => executar(() => chatsApi.addParticipant(activeChat.id, userId)).then(() => recarregarConversa(activeChat.id))}
           onRemove={(userId) =>
             executar(() => chatsApi.removeParticipant(activeChat.id, userId)).then(() => recarregarConversa(activeChat.id))

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import Avatar from "./Avatar";
 import ProfileModal from "./ProfileModal";
-import { chatTitle, contactsWithoutMe, isOnline, messagePreview, sortChats } from "@/lib/format";
+import { chatAvatarUrl, chatTitle, contactsWithoutMe, isOnline, messagePreview, sortChats } from "@/lib/format";
 import type { Chat, User } from "@/lib/types";
 
 interface Props {
@@ -18,6 +18,7 @@ interface Props {
   onLogout: () => void;
   onUpdateMe?: (updated: User) => void;
   onSearch?: (term: string) => void;
+  footer?: ReactNode;
 }
 
 export default function Sidebar({
@@ -32,6 +33,7 @@ export default function Sidebar({
   onLogout,
   onUpdateMe,
   onSearch,
+  footer,
 }: Props) {
   const [busca, setBusca] = useState("");
   const [mostrarPerfil, setMostrarPerfil] = useState(false);
@@ -153,7 +155,7 @@ export default function Sidebar({
               activeChatId === chat.id ? "bg-slate-800" : ""
             }`}
           >
-            <Avatar name={chatTitle(chat, me.id)} online={isOnline(chat, me.id)} />
+            <Avatar name={chatTitle(chat, me.id)} url={chatAvatarUrl(chat, me.id)} online={isOnline(chat, me.id)} />
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium">
                 {chat.type === "GROUP" && <span className="mr-1 text-slate-400">#</span>}
@@ -200,6 +202,8 @@ export default function Sidebar({
           <p className="p-4 text-center text-sm text-slate-500">Nenhum resultado.</p>
         )}
       </div>
+
+      {footer}
     </aside>
   );
 }

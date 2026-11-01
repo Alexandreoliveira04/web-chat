@@ -120,6 +120,11 @@ export const chatsApi = {
     request<Chat>('/chats/groups', { method: 'POST', body: body({ name, participantIds }) }),
   rename: (chatId: number, name: string) =>
     request<Chat>(`/chats/${chatId}`, { method: 'PATCH', body: body({ name }) }),
+  uploadAvatar: (chatId: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<Chat>(`/chats/${chatId}/avatar`, { method: 'POST', body: formData });
+  },
   addParticipant: (chatId: number, userId: number) =>
     request<Chat>(`/chats/${chatId}/participants`, { method: 'POST', body: body({ userId }) }),
   removeParticipant: (chatId: number, userId: number) =>
@@ -139,6 +144,7 @@ export const messagesApi = {
     request<Message>(`/chats/${chatId}/messages/${messageId}`, { method: 'PATCH', body: body({ content }) }),
   remove: (chatId: number, messageId: number) =>
     request<Message>(`/chats/${chatId}/messages/${messageId}`, { method: 'DELETE' }),
+  shared: (chatId: number) => request<Message[]>(`/chats/${chatId}/messages/shared`),
   markAsRead: (chatId: number) =>
     request<{ markedAsRead: number }>(`/chats/${chatId}/messages/read`, { method: 'PATCH' }),
 };
