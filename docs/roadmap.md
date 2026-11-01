@@ -4,19 +4,17 @@ O que ficou pendente ou foi planejado, em ordem sugerida. Atualizado em novembro
 depois das chamadas de voz individuais, da foto de perfil no Cloud Storage e da galeria com
 documentos.
 
-## Antes de subir a branch atual
+## Antes de juntar a branch atual na `develop`
 
-A branch `feat/chamada-de-voz` ainda não tem commit.
+A branch `feat/chamada-de-voz` já está no GitHub, com pull request aberto para a `develop`.
 
-- [ ] **Testar a chamada com microfone de verdade**, em dois navegadores e com fone. Nos
-  testes automatizados e manuais, o microfone foi simulado com um tom gerado por Web Audio,
-  porque o navegador usado bloqueava o microfone.
+- [x] **Testar a chamada com microfone de verdade**, em dois navegadores e com fone.
 - [ ] **Avisar o grupo sobre as fotos de perfil antigas.** Elas ficavam no disco do servidor e
   deixaram de aparecer (o avatar mostra as iniciais); cada pessoa precisa enviar a foto de
   novo. Depois disso, a pasta `backend/uploads/` pode ser apagada.
-- [ ] **Não versionar as pastas `web-chat/` e `__MACOSX/`** que estão soltas na raiz do
-  repositório (parecem de um zip extraído).
-- [ ] **Commit e pull request** para `develop`.
+- [x] **Não versionar as pastas `web-chat/` e `__MACOSX/`** que estão soltas na raiz do
+  repositório (parecem de um zip extraído). Ficaram fora dos commits, mas continuam no disco.
+- [x] **Commit e pull request** para `develop`.
 - [ ] **Atualizar o documento da disciplina:** agora são seis módulos (entraram `storage` e
   `call`), 208 testes, as fotos de perfil e de grupo também vão para o Cloud Storage e há chamadas de voz
   por WebRTC (referência: RFC 8825).
