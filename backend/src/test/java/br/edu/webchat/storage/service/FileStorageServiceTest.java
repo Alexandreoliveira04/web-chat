@@ -1,5 +1,6 @@
 package br.edu.webchat.storage.service;
 
+import br.edu.webchat.shared.exception.BadRequestException;
 import com.google.cloud.storage.BlobInfo;
 import com.google.cloud.storage.Bucket;
 import com.google.cloud.storage.BucketInfo;
@@ -43,7 +44,7 @@ class FileStorageServiceTest {
 	// ---------- upload ----------
 
 	@Test
-	void uploadDeveGravarComNomeUuidMantendoExtensaoETipo() {
+	void uploadDeveGuardarONomeOriginalDentroDeUmaPastaUuid() {
 		byte[] conteudo = {1, 2, 3};
 		MockMultipartFile foto = new MockMultipartFile("file", "minha foto.png", "image/png", conteudo);
 
@@ -52,25 +53,52 @@ class FileStorageServiceTest {
 		ArgumentCaptor<BlobInfo> blob = ArgumentCaptor.forClass(BlobInfo.class);
 		verify(storage).create(blob.capture(), eq(conteudo));
 
-		// O nome do usuario some: fica so um UUID com a extensao original.
+		// O UUID evita colisao entre arquivos com o mesmo nome; o nome do usuario e mantido.
 		String nomeGravado = blob.getValue().getName();
-		assertThat(nomeGravado).matches(UUID_REGEX + "\\.png");
+		assertThat(nomeGravado).matches(UUID_REGEX + "/minha foto\\.png");
 		assertThat(blob.getValue().getBucket()).isEqualTo(BUCKET);
 		assertThat(blob.getValue().getContentType()).isEqualTo("image/png");
+		assertThat(blob.getValue().getContentDisposition()).isEqualTo("inline; filename*=UTF-8''minha%20foto.png");
 
-		// A URL devolvida aponta para o mesmo arquivo gravado.
-		assertThat(url).isEqualTo(PUBLIC_URL + "/storage/v1/b/" + BUCKET + "/o/" + nomeGravado + "?alt=media");
+		// A URL aponta para o mesmo objeto, com o nome codificado num unico segmento.
+		String uuid = nomeGravado.substring(0, nomeGravado.indexOf('/'));
+		assertThat(url).isEqualTo(PUBLIC_URL + "/storage/v1/b/" + BUCKET + "/o/" + uuid + "%2Fminha%20foto.png?alt=media");
 	}
 
 	@Test
-	void uploadSemExtensaoDeveGerarNomeSoComUuid() {
+	void nomeDoArquivoPerdeCaminhoECaracteresDeControleMasMantemAcentos() {
+		assertThat(FileStorageService.safeFileName("C:\\Users\\eu\\Relatório final.pdf")).isEqualTo("Relatório final.pdf");
+		assertThat(FileStorageService.safeFileName("../../etc/passwd")).isEqualTo("passwd");
+		assertThat(FileStorageService.safeFileName("a\u0000b.txt")).isEqualTo("ab.txt");
+		assertThat(FileStorageService.safeFileName(null)).isEqualTo("arquivo");
+		assertThat(FileStorageService.safeFileName("..")).isEqualTo("arquivo");
+
+		String longo = FileStorageService.safeFileName("x".repeat(300) + ".docx");
+		assertThat(longo).hasSize(150).endsWith(".docx");
+	}
+
+	@Test
+	void uploadSemExtensaoMantemONome() {
 		MockMultipartFile arquivo = new MockMultipartFile("file", "arquivo", "application/octet-stream", new byte[] {9});
 
 		service(false).uploadFile(arquivo);
 
 		ArgumentCaptor<BlobInfo> blob = ArgumentCaptor.forClass(BlobInfo.class);
 		verify(storage).create(blob.capture(), any(byte[].class));
-		assertThat(blob.getValue().getName()).matches(UUID_REGEX);
+		assertThat(blob.getValue().getName()).matches(UUID_REGEX + "/arquivo");
+	}
+
+	@Test
+	void uploadDeImagemSoAceitaImagens() {
+		MockMultipartFile pdf = new MockMultipartFile("file", "doc.pdf", "application/pdf", new byte[] {1});
+		MockMultipartFile vazio = new MockMultipartFile("file", "foto.png", "image/png", new byte[0]);
+
+		assertThatThrownBy(() -> service(false).uploadImage(pdf)).isInstanceOf(BadRequestException.class);
+		assertThatThrownBy(() -> service(false).uploadImage(vazio)).isInstanceOf(BadRequestException.class);
+		verifyNoInteractions(storage);
+
+		MockMultipartFile foto = new MockMultipartFile("file", "grupo.png", "image/png", new byte[] {1});
+		assertThat(service(false).uploadImage(foto)).contains("%2Fgrupo.png?alt=media");
 	}
 
 	@Test

@@ -49,7 +49,7 @@ class ChatControllerTest {
 
 	private static final Authentication LOGADO = new UsernamePasswordAuthenticationToken(EMAIL, null, List.of());
 
-	private static final ChatResponse CONVERSA = new ChatResponse(10L, ChatType.DIRECT, null, null,
+	private static final ChatResponse CONVERSA = new ChatResponse(10L, ChatType.DIRECT, null, null, null,
 			List.of(new ParticipantResponse(1L, "Alexandre", EMAIL, UserStatus.OFFLINE, null),
 					new ParticipantResponse(2L, "Maria", "maria@email.com", UserStatus.ONLINE, null)),
 			new MessageResponse(99L, 10L, 2L, "oi, tudo bem?", Instant.parse("2026-09-14T22:05:00Z"), null, null),

@@ -1,5 +1,6 @@
 package br.edu.webchat.chat.service;
 
+import br.edu.webchat.chat.dto.ChatEventResponse;
 import br.edu.webchat.chat.dto.ChatResponse;
 import br.edu.webchat.chat.dto.CreateChatRequest;
 import br.edu.webchat.chat.dto.CreateChatResult;
@@ -11,15 +12,18 @@ import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.shared.exception.BadRequestException;
 import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
+import br.edu.webchat.storage.service.FileStorageService;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
@@ -52,6 +56,9 @@ class ChatServiceTest {
 	@Mock
 	private ApplicationEventPublisher events;
 
+	@Mock
+	private FileStorageService fileStorageService;
+
 	private ChatService chatService;
 
 	private final User alexandre = usuario(1L, "Alexandre", "alexandre@email.com");
@@ -60,7 +67,7 @@ class ChatServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator, events);
+		chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator, events, fileStorageService);
 	}
 
 	@Test
@@ -220,6 +227,44 @@ class ChatServiceTest {
 
 		assertThatThrownBy(() -> chatService.findById(99L, "alexandre@email.com"))
 				.isInstanceOf(NotFoundException.class);
+	}
+
+	// ---------- foto do grupo ----------
+
+	@Test
+	void donoTrocaAFotoDoGrupoEAvisaOsParticipantes() {
+		Chat grupo = Chat.group("Turma", alexandre);
+		grupo.addParticipant(maria);
+		ReflectionTestUtils.setField(grupo, "id", 20L);
+		MockMultipartFile foto = new MockMultipartFile("file", "turma.png", "image/png", new byte[] {1});
+		when(userRepository.findByEmail("alexandre@email.com")).thenReturn(Optional.of(alexandre));
+		when(chatRepository.findWithParticipantsById(20L)).thenReturn(Optional.of(grupo));
+		when(fileStorageService.uploadImage(foto)).thenReturn("http://gcs/o/turma.png?alt=media");
+
+		ChatResponse response = chatService.changeAvatar(20L, "alexandre@email.com", foto);
+
+		assertThat(response.avatarUrl()).isEqualTo("http://gcs/o/turma.png?alt=media");
+		ArgumentCaptor<ChatChangedEvent> evento = ArgumentCaptor.forClass(ChatChangedEvent.class);
+		verify(events).publishEvent(evento.capture());
+		assertThat(evento.getValue().event().event()).isEqualTo(ChatEventResponse.ChatEventType.UPDATED);
+		assertThat(evento.getValue().recipientEmails()).containsExactly("alexandre@email.com", "maria@email.com");
+	}
+
+	@Test
+	void fotoDoGrupoSoPeloDonoESoEmGrupo() {
+		Chat grupo = Chat.group("Turma", alexandre);
+		grupo.addParticipant(maria);
+		MockMultipartFile foto = new MockMultipartFile("file", "turma.png", "image/png", new byte[] {1});
+		when(userRepository.findByEmail("maria@email.com")).thenReturn(Optional.of(maria));
+		when(chatRepository.findWithParticipantsById(20L)).thenReturn(Optional.of(grupo));
+
+		assertThatThrownBy(() -> chatService.changeAvatar(20L, "maria@email.com", foto))
+				.isInstanceOf(ForbiddenException.class);
+
+		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(chat(10L, alexandre, maria)));
+		assertThatThrownBy(() -> chatService.changeAvatar(10L, "maria@email.com", foto))
+				.isInstanceOf(BadRequestException.class);
+		verifyNoInteractions(fileStorageService);
 	}
 
 	private static MessageRepository.UnreadCount naoLidas(Long chatId, Long total) {
