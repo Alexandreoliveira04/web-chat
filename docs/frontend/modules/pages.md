@@ -41,6 +41,7 @@ validações do backend, e a mensagem de erro vem da API: o `RequestError` conca
 | `messages`, `hasMore`, `nextBefore` | histórico da conversa aberta e cursor de paginação |
 | `conectado`, `erro`, `carregando` | estado da conexão STOMP, erro em toast e carregamento |
 | `mostrarNovoGrupo`, `mostrarParticipantes` | modais abertos |
+| `chamada` | a chamada de voz, pelo hook [`useVoiceCall`](libs.md#usevoicecallts) |
 
 Os componentes abaixo dela são de apresentação: recebem dados e callbacks por props. Um
 único dono de estado evita sincronizar a mesma conversa em dois lugares — que é exatamente o
@@ -64,7 +65,12 @@ Além dos handlers de tempo real (tabela em
 
 `meRef` e `activeChatIdRef` existem porque os handlers do STOMP são registrados uma vez e
 capturariam o valor do primeiro render. As refs dão a eles o valor atual — é o que faz uma
-mensagem cair na conversa certa depois de o usuário trocar de conversa.
+mensagem cair na conversa certa depois de o usuário trocar de conversa. `chamadaRef` faz o
+mesmo pelos handlers de chamada; ela é atualizada num efeito, e não durante o render.
+
+Pelo mesmo motivo, os callbacks passados como dependência de efeito precisam ser estáveis. O
+`buscarConversas`, que a `Sidebar` chama ao buscar, é um `useCallback`: criado de novo a cada
+render, ele fazia a busca se repetir sem parar.
 
 ### Ações
 
@@ -76,6 +82,9 @@ mensagem cair na conversa certa depois de o usuário trocar de conversa.
 | Carregar anteriores | `messagesApi.history(chatId, nextBefore)`, concatenando no início |
 | Editar / apagar | `PATCH`/`DELETE`; a tela só muda quando o evento volta em `/user/queue/message-updates` |
 | Criar grupo, renomear, add/remover participante, sair | chamam a API e recarregam a conversa afetada |
+| Ligar, atender, recusar, desligar, mudo | delegados ao `useVoiceCall`; a `CallBar` vai no rodapé da `Sidebar` e o `IncomingCall` por cima de tudo |
+| Perfil de alguém mudou (`/topic/profiles`) | troca nome e foto em `users`, nos participantes de cada conversa e em `me` |
+| Alguém se cadastrou (`/topic/users`) | adiciona a pessoa em `users`, se ainda não estiver lá |
 
 Todo erro de ação passa por `executar(...)`, que exibe a mensagem em um toast no rodapé e
 relança — assim o componente que disparou a ação também sabe que ela falhou.

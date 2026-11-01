@@ -1,8 +1,9 @@
 # Web Chat
 
-Aplicação web de chat interno entre colaboradores: cadastro e login com papéis, conversas
-individuais e em grupo, mensagens com edição e exclusão, histórico, marcação de leitura por
-participante e presença — tudo em tempo real por WebSocket.
+Aplicação web de chat interno entre colaboradores: cadastro e login com papéis e foto de
+perfil, conversas individuais e em grupo, mensagens com edição e exclusão, envio de fotos,
+vídeos e documentos, histórico, marcação de leitura por participante, presença e chamadas de
+voz individuais — tudo em tempo real por WebSocket.
 
 Backend em **Java 17 + Spring Boot 3**, organizado como monólito modular seguindo MVC, com
 PostgreSQL. Frontend em **Next.js 16 + TypeScript**, publicado como export estático e servido
@@ -10,7 +11,7 @@ pelo próprio backend — um processo, um artefato.
 
 ```text
 web-chat/
-├── backend/     API REST + WebSocket (Maven) + GCS Uploads
+├── backend/     API REST + WebSocket (Maven), uploads no Google Cloud Storage
 ├── frontend/    interface em Next.js
 ├── docs/        documentação técnica
 ├── compose.yaml PostgreSQL, fake-gcs-server e a aplicação (profile "app")
@@ -37,8 +38,9 @@ O Maven não precisa estar instalado: o wrapper (`mvnw`) acompanha o projeto em 
 docker compose up -d
 ```
 
-Sobe um PostgreSQL 16 em `localhost:5432` e um **Emulador Oficial do Google Cloud Storage** (`fake-gcs-server`) em `localhost:4443` para upload de fotos e vídeos. Para parar,
-`docker compose down`.
+Sobe um PostgreSQL 16 em `localhost:5432` e um emulador do Google Cloud Storage
+(`fake-gcs-server`) em `localhost:4443`, onde ficam as fotos, os vídeos, os documentos e as
+fotos de perfil. Para parar, `docker compose down`.
 
 ### 2. Backend
 
@@ -68,7 +70,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
 ```
 
 Para testar uma conversa, abra duas janelas (uma anônima, já que o token fica no
-`localStorage`) e entre com usuários diferentes.
+`localStorage`) e entre com usuários diferentes. Para testar uma **chamada de voz**, use
+`localhost:8080` numa janela e `127.0.0.1:8080` na outra: o navegador só libera o microfone
+em `localhost` ou HTTPS, e as duas origens guardam tokens separados. Use fone de ouvido.
 
 ---
 
@@ -96,7 +100,8 @@ cd backend
 ./mvnw test
 ```
 
-Rodam em H2 na memória (perfil `test`), sem exigir Docker.
+São 208 testes. Rodam em H2 na memória (perfil `test`), sem exigir Docker nem o emulador do
+Cloud Storage.
 
 ---
 
@@ -107,6 +112,7 @@ A documentação técnica fica em [docs/](docs/README.md):
 | | |
 | --- | --- |
 | [Arquitetura do backend](docs/backend/architecture.md) | stack, módulos, camadas, convenções, configuração e testes |
-| [Módulos do backend](docs/backend/modules/) | [shared](docs/backend/modules/shared.md), [user](docs/backend/modules/user.md), [auth](docs/backend/modules/auth.md), [chat](docs/backend/modules/chat.md) — inclui a referência da API REST e do WebSocket |
+| [Módulos do backend](docs/backend/modules/) | [shared](docs/backend/modules/shared.md), [user](docs/backend/modules/user.md), [auth](docs/backend/modules/auth.md), [chat](docs/backend/modules/chat.md), [storage](docs/backend/modules/storage.md), [call](docs/backend/modules/call.md) — inclui a referência da API REST e do WebSocket |
 | [Arquitetura do frontend](docs/frontend/architecture.md) | stack, comunicação com a API, tempo real e build |
 | [Módulos do frontend](docs/frontend/modules/) | [páginas](docs/frontend/modules/pages.md), [componentes](docs/frontend/modules/components.md), [lib](docs/frontend/modules/libs.md) |
+| [Próximos passos](docs/roadmap.md) | o que falta antes de subir a branch atual, e o que vem depois: jogos, chamadas em grupo, arquivos, qualidade e produção |
