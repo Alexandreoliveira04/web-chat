@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { initials } from "@/lib/format";
 import { getAssetUrl } from "@/lib/api";
 
@@ -13,13 +14,17 @@ export default function Avatar({ name, url, online = false, size = "md" }: Props
   if (size === "sm") dimensao = "h-9 w-9 text-xs";
   if (size === "lg") dimensao = "h-32 w-32 text-3xl";
 
+  // Se a imagem não carregar (ex.: foto antiga que ficava no disco do servidor), mostra as iniciais.
+  const [urlComFalha, setUrlComFalha] = useState<string | null>(null);
+  const mostrarFoto = Boolean(url) && url !== urlComFalha;
+
   return (
     <div className={`relative shrink-0 isolate transform-gpu ${dimensao}`}>
       <div
         className={`h-full w-full flex items-center justify-center rounded-full bg-slate-700 font-semibold text-slate-100 overflow-hidden avatar-container`}
       >
-        {url ? (
-          <img src={getAssetUrl(url)} alt={name} className="h-full w-full object-cover" />
+        {mostrarFoto ? (
+          <img src={getAssetUrl(url!)} alt={name} className="h-full w-full object-cover" onError={() => setUrlComFalha(url!)} />
         ) : (
           <span>{initials(name)}</span>
         )}

@@ -11,6 +11,12 @@ export function chatTitle(chat: Chat, meId: number): string {
   return otherParticipant(chat, meId)?.name ?? "Conversa";
 }
 
+/** Foto da conversa: a do grupo, ou a do contato em conversa individual. */
+export function chatAvatarUrl(chat: Chat, meId: number): string | undefined {
+  if (chat.type === "GROUP") return chat.avatarUrl ?? undefined;
+  return otherParticipant(chat, meId)?.avatarUrl;
+}
+
 export function chatSubtitle(chat: Chat, meId: number): string {
   if (chat.type === "GROUP") {
     return `${chat.participants.length} participantes`;

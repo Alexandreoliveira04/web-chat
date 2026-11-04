@@ -4,9 +4,10 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import Avatar from "./Avatar";
 import MessageItem from "./MessageItem";
 import ChatDetailsSidebar from "./ChatDetailsSidebar";
-import { chatSubtitle, chatTitle } from "@/lib/format";
+import { chatAvatarUrl, chatSubtitle, chatTitle } from "@/lib/format";
 import type { Chat, Message, User } from "@/lib/types";
 import { filesApi } from "@/lib/api";
+import { PhoneIcon } from "./IncomingCall";
 
 interface Props {
   chat: Chat;
@@ -19,6 +20,8 @@ interface Props {
   onEdit: (messageId: number, content: string) => Promise<void>;
   onDelete: (messageId: number) => Promise<void>;
   onOpenSettings: () => void;
+  onStartCall: () => void;
+  emChamada: boolean;
 }
 
 export default function ChatWindow({
@@ -32,6 +35,8 @@ export default function ChatWindow({
   onEdit,
   onDelete,
   onOpenSettings,
+  onStartCall,
+  emChamada,
 }: Props) {
   const [texto, setTexto] = useState("");
   const [busca, setBusca] = useState("");
@@ -163,11 +168,11 @@ export default function ChatWindow({
 </svg>`.trim());
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      <section className="flex flex-1 flex-col bg-slate-950">
+    <div className="flex min-w-0 flex-1 overflow-hidden">
+      <section className="flex min-w-0 flex-1 flex-col bg-slate-950">
         <header className="flex items-center gap-3 border-b border-slate-800 bg-slate-900 p-4">
           <button type="button" onClick={() => setShowInfo(true)} className="transition hover:opacity-80 shrink-0">
-            <Avatar name={chatTitle(chat, me.id)} />
+            <Avatar name={chatTitle(chat, me.id)} url={chatAvatarUrl(chat, me.id)} />
           </button>
           <div 
             className="min-w-0 flex-1 cursor-pointer transition hover:opacity-80" 
@@ -205,6 +210,18 @@ export default function ChatWindow({
             </div>
           )}
         </div>
+
+        {chat.type === "DIRECT" && (
+          <button
+            type="button"
+            onClick={onStartCall}
+            disabled={emChamada}
+            title={emChamada ? "Você já está em uma chamada" : "Iniciar chamada de voz"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-40 disabled:hover:border-slate-700 disabled:hover:text-slate-300"
+          >
+            <PhoneIcon />
+          </button>
+        )}
 
         {chat.type === "GROUP" && (
           <button
@@ -278,7 +295,7 @@ export default function ChatWindow({
           type="file" 
           ref={fileInputRef} 
           className="hidden" 
-          accept="image/*,video/*,.pdf,.doc,.docx" 
+          accept="image/*,video/*,.pdf,.doc,.docx,.odt,.rtf,.txt,.md,.xls,.xlsx,.ods,.csv,.ppt,.pptx,.odp,.zip,.rar,.7z" 
           onChange={handleFileUpload} 
         />
         <button

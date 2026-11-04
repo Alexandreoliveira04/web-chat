@@ -1,7 +1,7 @@
 # Arquitetura — Backend
 
 API REST + WebSocket do Web Chat, em Java 17 e Spring Boot 3.5. Um único projeto Maven,
-organizado como **monólito modular**: um processo, um artefato de deploy, quatro módulos com
+organizado como **monólito modular**: um processo, um artefato de deploy, seis módulos com
 fronteiras claras dentro do mesmo jar.
 
 A documentação de cada módulo fica em [modules/](modules/).
@@ -16,6 +16,8 @@ A documentação de cada módulo fica em [modules/](modules/).
 | Migrations | Flyway |
 | Autenticação | JWT (JJWT 0.12.6), stateless |
 | Tempo real | STOMP sobre WebSocket nativo, broker em memória do Spring |
+| Arquivos | Google Cloud Storage (SDK oficial); emulador `fake-gcs-server` no desenvolvimento |
+| Voz | WebRTC entre os navegadores; o servidor só faz a sinalização por STOMP |
 | Build | Maven (wrapper `mvnw` incluso) |
 | Testes | JUnit 5, Mockito, Spring Security Test, H2 em memória |
 
@@ -33,11 +35,14 @@ complexidade, e o broker em memória do Spring atende o tempo real de um process
         │     Spring Boot     │
         │  ┌───────────────┐  │
         │  │ auth   user   │  │
-        │  │ chat   shared │  │
+        │  │ chat   call   │  │
+        │  │ storage shared│  │
         │  └───────────────┘  │
-        └──────────┬──────────┘
-                   │ JPA / Flyway
-              PostgreSQL
+        └─────┬────────┬──────┘
+   JPA/Flyway │        │ SDK do Google
+         PostgreSQL   Cloud Storage
+
+  Navegador A ◄══ áudio WebRTC (direto, sem passar pelo servidor) ══► Navegador B
 ```
 
 O frontend não é um processo separado em produção: o build do Next gera HTML/JS estáticos
@@ -52,18 +57,22 @@ que o próprio Spring Boot serve, então sobe um container só. Ver
 | [user](modules/user.md) | Colaboradores: cadastro, consulta, perfil, status, papel |
 | [auth](modules/auth.md) | Registro, login, JWT, Spring Security, autorização por papéis |
 | [chat](modules/chat.md) | Conversas, grupos, mensagens, histórico, leitura, WebSocket |
-| [storage](modules/storage.md) | Integração Google Cloud Storage (GCS) nativa, emulador local e upload de mídias |
+| [storage](modules/storage.md) | Upload de arquivos para o Google Cloud Storage (emulador local no desenvolvimento) |
+| [call](modules/call.md) | Chamadas de voz individuais: sinalização WebRTC por STOMP |
 
 Dependências permitidas entre eles:
 
 ```text
-auth ──> user ──┐
-chat ──> user ──┼──> shared
-chat ──> auth ──┘
+auth ──> user ──> storage
+chat ──> user, auth, storage
+call ──> chat, user
+todos ──> shared
 ```
 
 `chat` depende de `auth` em um ponto só: o `StompAuthInterceptor` reaproveita o `JwtService`
-e o `UserDetailsService` para autenticar o frame `CONNECT`.
+e o `UserDetailsService` para autenticar o frame `CONNECT`. `user` e `chat` usam o `storage` para gravar
+as fotos de perfil e de grupo, e `call` usa o `chat` para saber quem participa da conversa e para os
+destinos STOMP. `storage` não depende de nenhum outro módulo.
 
 `shared` não conhece ninguém — é o único módulo do qual todos podem depender, e por isso
 guarda apenas o que é de fato comum. Regra prática: se uma classe serve a um módulo só, ela
@@ -122,14 +131,14 @@ O schema é versionado **exclusivamente** por migrations Flyway em
 `ddl-auto: validate` e nunca altera o banco — se a entidade e o schema divergirem, a
 aplicação não sobe, em vez de corrigir sozinha e mascarar o erro.
 
-Cada módulo cria as próprias migrations. São 10 hoje, de `V1__init.sql` a
-`V10__add_edit_and_delete_to_messages.sql`.
+Cada módulo cria as próprias migrations. São 12 hoje, de `V1__init.sql` a
+`V12__add_avatar_to_chats.sql`. Os módulos `call` e `storage` não têm tabelas.
 
 ## Divisão REST × WebSocket
 
 | REST | WebSocket |
 | ---- | --------- |
-| Criar e listar conversas, consultar histórico, perfil | Envio e recebimento de mensagens, recibo de leitura, presença |
+| Criar e listar conversas, consultar histórico e arquivos compartilhados, perfil e foto, upload de arquivos | Envio e recebimento de mensagens, recibo de leitura, presença, mudanças de perfil, sinalização das chamadas de voz |
 
 A persistência é sempre do service: os dois caminhos passam pelo mesmo `MessageService`, para
 que não existam duas escritas divergentes. Enviar por `POST` também notifica em tempo real.
@@ -154,7 +163,7 @@ cd backend
 ./mvnw test
 ```
 
-São 179 métodos `@Test`, em quatro camadas:
+São 208 métodos `@Test`, em quatro camadas:
 
 | Tipo | Como | Cobre |
 | ---- | ---- | ----- |
@@ -163,7 +172,10 @@ São 179 métodos `@Test`, em quatro camadas:
 | Repository | `@DataJpaTest` (H2) | queries, constraints, geração de id |
 | Integração | `@SpringBootTest` | cadeia de segurança real, fluxo completo, WebSocket com cliente STOMP de verdade |
 
-`RealtimeIntegrationTest` sobe o servidor em porta aleatória e conversa por WebSocket;
+`RealtimeIntegrationTest` e `CallIntegrationTest` sobem o servidor em porta aleatória e
+conversam por WebSocket com clientes STOMP de verdade. Os dois estendem
+`StompIntegrationTest` (pacote de teste `support`), que concentra a conexão, a assinatura e a
+limpeza entre testes; um teste novo de tempo real só precisa estender essa base.
 `MvpFlowIntegrationTest` percorre cadastro → login → conversa → envio → histórico → leitura.
 
 O perfil `test` usa H2 para que a suíte rode sem Docker — a contrapartida está registrada em
@@ -173,7 +185,11 @@ O perfil `test` usa H2 para que a suíte rode sem Docker — a contrapartida est
 
 - **Sem refresh token**: expirado o JWT, é preciso novo login.
 - **Broker em memória**: o tempo real funciona em um processo. Rodar duas instâncias exigiria
-  um broker externo (RabbitMQ/Redis) ou sessões afinadas por usuário.
+  um broker externo (RabbitMQ/Redis) ou sessões afinadas por usuário. O mesmo vale para a
+  presença e para as chamadas em andamento.
+- **Chamadas só individuais e sem TURN**: ver [call](modules/call.md#limitações-conhecidas).
+- **Arquivos com URL pública e nunca apagados**: ver
+  [storage](modules/storage.md#limitações-conhecidas).
 - **Sem paginação em `GET /users`**: adequado ao número de colaboradores esperado.
 - **Sem remoção de usuário**: fora do escopo.
 - **Deploy em cloud não feito**: o projeto roda local e em container, mas não há pipeline nem

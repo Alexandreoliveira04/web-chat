@@ -84,7 +84,8 @@ class StompAuthInterceptorTest {
 	void subscribeSomenteNosDestinosPermitidos() {
 		UsernamePasswordAuthenticationToken user = new UsernamePasswordAuthenticationToken(EMAIL, null, List.of());
 
-		for (String allowed : List.of("/user/queue/messages", "/user/queue/read", "/user/queue/errors", "/topic/presence")) {
+		for (String allowed : List.of("/user/queue/messages", "/user/queue/read", "/user/queue/errors", "/topic/presence",
+				"/user/queue/calls", "/user/queue/call-signal", "/topic/profiles", "/topic/users")) {
 			Message<?> message = frame(StompCommand.SUBSCRIBE, allowed, null, user);
 			assertThat(interceptor.preSend(message, channel)).isSameAs(message);
 		}

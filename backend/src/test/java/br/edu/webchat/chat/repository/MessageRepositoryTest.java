@@ -149,4 +149,20 @@ class MessageRepositoryTest {
 				.toList();
 	}
 
+	@Test
+	void conteudoCompartilhadoTrazSoArquivosELinksNaoApagadosDaConversa() {
+		Message foto = messageRepository.save(new Message(comMaria, alexandre, "http://gcs/o/a.png?alt=media"));
+		messageRepository.save(new Message(comMaria, maria, "texto sem link"));
+		Message link = messageRepository.save(new Message(comMaria, maria, "olha isso https://exemplo.com"));
+		Message apagada = new Message(comMaria, alexandre, "http://gcs/o/b.pdf?alt=media");
+		apagada.markAsDeleted();
+		messageRepository.save(apagada);
+		messageRepository.save(new Message(comJoao, alexandre, "https://outra-conversa.com"));
+		entityManager.flush();
+
+		List<Message> compartilhadas = messageRepository.findSharedContent(comMaria.getId(), PageRequest.ofSize(10));
+
+		assertThat(compartilhadas).extracting(Message::getId).containsExactly(link.getId(), foto.getId());
+	}
+
 }

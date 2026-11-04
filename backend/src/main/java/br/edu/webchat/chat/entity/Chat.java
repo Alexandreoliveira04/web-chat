@@ -42,6 +42,9 @@ public class Chat {
 	@Column(length = MAX_NAME_LENGTH)
 	private String name;
 
+	@Column(name = "avatar_url", length = 500)
+	private String avatarUrl;
+
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "owner_id")
 	private User owner;
@@ -126,6 +129,11 @@ public class Chat {
 		registerActivity();
 	}
 
+	public void changeAvatar(String avatarUrl) {
+		this.avatarUrl = avatarUrl;
+		registerActivity();
+	}
+
 	public Optional<User> oldestParticipant() {
 		return participants.stream()
 				.map(ChatParticipant::getUser)
@@ -181,6 +189,10 @@ public class Chat {
 
 	public String getName() {
 		return name;
+	}
+
+	public String getAvatarUrl() {
+		return avatarUrl;
 	}
 
 	public Long getOwnerId() {

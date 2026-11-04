@@ -3,8 +3,10 @@ package br.edu.webchat.user.service;
 import br.edu.webchat.shared.exception.ConflictException;
 import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
+import br.edu.webchat.storage.service.FileStorageService;
 import br.edu.webchat.user.dto.CreateUserRequest;
 import br.edu.webchat.user.dto.UpdateUserRequest;
+import br.edu.webchat.user.dto.ProfileResponse;
 import br.edu.webchat.user.dto.UserResponse;
 import br.edu.webchat.user.entity.Role;
 import br.edu.webchat.user.entity.User;
@@ -16,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -27,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,13 +40,19 @@ class UserServiceTest {
 	@Mock
 	private UserRepository userRepository;
 
+	@Mock
+	private ApplicationEventPublisher events;
+
+	@Mock
+	private FileStorageService fileStorageService;
+
 	private UserService userService;
 
 	private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
 	@BeforeEach
 	void setUp() {
-		userService = new UserService(userRepository, passwordEncoder);
+		userService = new UserService(userRepository, passwordEncoder, events, fileStorageService);
 	}
 
 	@Test
@@ -55,6 +66,7 @@ class UserServiceTest {
 		assertThat(response.name()).isEqualTo("Alexandre Oliveira");
 		assertThat(response.email()).isEqualTo("alexandre@email.com");
 		assertThat(response.status()).isEqualTo(UserStatus.OFFLINE);
+		verify(events).publishEvent(new UserCreatedEvent(response));
 
 		ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
 		verify(userRepository).save(saved.capture());
@@ -148,6 +160,22 @@ class UserServiceTest {
 
 		assertThat(response.name()).isEqualTo("Alexandre Silva");
 		assertThat(user.getRole()).isEqualTo(Role.USER);
+		verify(events).publishEvent(new ProfileChangedEvent(new ProfileResponse(user.getId(), "Alexandre Silva", null)));
+	}
+
+	@Test
+	void fotoDePerfilVaiParaOStorageEAvisaOsOutros() {
+		User user = usuario();
+		MockMultipartFile foto = new MockMultipartFile("file", "eu.png", "image/png", new byte[] {1});
+		when(userRepository.findByEmail("alexandre@email.com")).thenReturn(Optional.of(user));
+		when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(fileStorageService.uploadImage(foto)).thenReturn("http://gcs/o/abc.png?alt=media");
+
+		UserResponse response = userService.uploadAvatar("alexandre@email.com", foto);
+
+		assertThat(response.avatarUrl()).isEqualTo("http://gcs/o/abc.png?alt=media");
+		verify(events).publishEvent(new ProfileChangedEvent(
+				new ProfileResponse(user.getId(), user.getName(), "http://gcs/o/abc.png?alt=media")));
 	}
 
 	// ---------- papeis ----------

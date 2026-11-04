@@ -16,12 +16,14 @@ import br.edu.webchat.shared.exception.BadRequestException;
 import br.edu.webchat.shared.exception.ConflictException;
 import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
+import br.edu.webchat.storage.service.FileStorageService;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.repository.UserRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -39,14 +41,17 @@ public class ChatService {
 	private final UserRepository userRepository;
 	private final ChatCreator chatCreator;
 	private final ApplicationEventPublisher events;
+	private final FileStorageService fileStorageService;
 
 	public ChatService(ChatRepository chatRepository, MessageRepository messageRepository,
-			UserRepository userRepository, ChatCreator chatCreator, ApplicationEventPublisher events) {
+			UserRepository userRepository, ChatCreator chatCreator, ApplicationEventPublisher events,
+			FileStorageService fileStorageService) {
 		this.chatRepository = chatRepository;
 		this.messageRepository = messageRepository;
 		this.userRepository = userRepository;
 		this.chatCreator = chatCreator;
 		this.events = events;
+		this.fileStorageService = fileStorageService;
 	}
 
 	public CreateChatResult create(String authenticatedEmail, CreateChatRequest request) {
@@ -111,6 +116,18 @@ public class ChatService {
 		Chat chat = findOwnedGroup(chatId, me);
 
 		chat.rename(request.name().strip());
+
+		publish(ChatEventType.UPDATED, chat, chat.users());
+		return toResponse(chat, me);
+	}
+
+	/** Foto do grupo: so o dono troca, como o nome. Vai para o Cloud Storage. */
+	@Transactional
+	public ChatResponse changeAvatar(Long chatId, String authenticatedEmail, MultipartFile file) {
+		User me = findAuthenticatedUser(authenticatedEmail);
+		Chat chat = findOwnedGroup(chatId, me);
+
+		chat.changeAvatar(fileStorageService.uploadImage(file));
 
 		publish(ChatEventType.UPDATED, chat, chat.users());
 		return toResponse(chat, me);

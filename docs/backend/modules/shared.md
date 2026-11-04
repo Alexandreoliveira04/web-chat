@@ -23,7 +23,8 @@ shared/
     ├── ForbiddenException
     ├── GlobalExceptionHandler
     ├── NotFoundException
-    └── UnauthorizedException
+    ├── UnauthorizedException
+    └── WebSocketExceptionHandler
 ```
 
 ## Health check
@@ -135,6 +136,29 @@ barrado antes, pelo Spring Security, e também devolve 403 no mesmo formato — 
 Novas exceções só devem ser criadas quando representarem um status HTTP que ainda
 não é coberto.
 
+## Erros no WebSocket
+
+O `GlobalExceptionHandler` só vale para o REST. Os destinos STOMP (`@MessageMapping`) de
+todos os módulos, hoje o envio de mensagens do [chat](chat.md#envio-por-stomp) e a
+sinalização das [chamadas](call.md#websocket), passam pelo `WebSocketExceptionHandler`, um
+`@ControllerAdvice` com `@MessageExceptionHandler`.
+
+O erro vira o mesmo `ApiError` e volta em `/user/queue/errors`, **só para a sessão que
+enviou** (`@SendToUser(broadcast = false)`). O `path` é o destino STOMP:
+
+| Exceção | `status` |
+| ------- | -------- |
+| validação do payload (`@Valid`) | 400, com `fields` |
+| `BadRequestException` | 400 |
+| payload que não pode ser convertido (ex.: valor de enum desconhecido) | 400 |
+| `ForbiddenException` | 403 |
+| `NotFoundException` | 404 |
+| `ConflictException` | 409 |
+| qualquer outra | 500, mensagem genérica, stack trace no log |
+
+Antes ele ficava dentro do `ChatWebSocketController` e só valia para aquele controller;
+centralizar foi o que permitiu ao módulo de chamadas reaproveitar o mesmo tratamento.
+
 ## `config/`
 
 - `PasswordEncoderConfig`: BCrypt, usado pelos módulos USER e AUTH.
@@ -143,7 +167,9 @@ não é coberto.
   `:8080`; no build servido pelo próprio Spring Boot, tudo fica na mesma origem e o CORS
   nem entra em jogo.
 - `StaticResourceConfig`: serve o export do Next e resolve `/login` → `login.html`,
-  `/chat` → `chat.html`. Sem isso, os caminhos sem extensão do App Router dariam 404.
+  `/chat` → `chat.html`. Sem isso, os caminhos sem extensão do App Router dariam 404. Os
+  arquivos enviados não passam por aqui: ficam no Cloud Storage
+  (ver [storage](storage.md)).
 
 O `SecurityConfig` ficou no módulo AUTH e a configuração de WebSocket, no módulo CHAT.
 
@@ -168,6 +194,7 @@ desenvolvimento local:
 | `ADMIN_NAME` | `Administrador` |
 | `WS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas no handshake WebSocket |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:*,http://127.0.0.1:*` — origens aceitas nas chamadas REST |
+| `GCS_HOST`, `GCS_PUBLICURL`, `GCS_BUCKET`, `GCS_INITBUCKET` | Cloud Storage — ver [storage](storage.md#urls-no-docker-e-no-host) |
 
 ### Perfis
 
