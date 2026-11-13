@@ -78,6 +78,9 @@ export default function ChatPage() {
 
   const abrirConversa = useCallback(
     async (chat: Chat) => {
+      if (activeChatIdRef.current === null) {
+        window.history.pushState({ conversaAberta: true }, "");
+      }
       setActiveChatId(chat.id);
       activeChatIdRef.current = chat.id;
       setCarregando(true);
@@ -300,17 +303,37 @@ export default function ChatPage() {
     };
   }, []);
 
+  // O "voltar" do navegador (e o do Android) fecha a conversa em vez de sair do app.
+  useEffect(() => {
+    function aoVoltarNoHistorico() {
+      setActiveChatId(null);
+      setMessages([]);
+    }
+
+    window.addEventListener("popstate", aoVoltarNoHistorico);
+    return () => window.removeEventListener("popstate", aoVoltarNoHistorico);
+  }, []);
+
   useEffect(() => {
     function onEscKeyDown(e: KeyboardEvent) {
       // Ignorar se houver modais abertos, ou se o foco estiver num input (opcional)
       if (e.key === "Escape" && !mostrarParticipantes && !mostrarNovoGrupo) {
-        setActiveChatId(null);
-        setMessages([]);
+        voltarParaLista();
       }
     }
     window.addEventListener("keydown", onEscKeyDown);
     return () => window.removeEventListener("keydown", onEscKeyDown);
   }, [mostrarParticipantes, mostrarNovoGrupo]);
+
+  /** Fecha a conversa; se ela empilhou um estado no histórico, desfaz pelo próprio histórico. */
+  function voltarParaLista() {
+    if (window.history.state?.conversaAberta) {
+      window.history.back();
+      return;
+    }
+    setActiveChatId(null);
+    setMessages([]);
+  }
 
   async function iniciarConversaDireta(user: User) {
     try {
@@ -366,6 +389,17 @@ export default function ChatPage() {
       throw falha;
     }
   }
+
+  const barraDaChamada =
+    chamada.state.status !== "idle" && chamada.state.status !== "incoming" ? (
+      <CallBar
+        call={chamada.state}
+        peer={contatoDaChamada}
+        onOpenChat={() => chatDaChamada && abrirConversa(chatDaChamada)}
+        onToggleMute={chamada.toggleMute}
+        onHangUp={chamada.hangUp}
+      />
+    ) : null;
 
   if (!me) {
     return (
@@ -439,8 +473,9 @@ export default function ChatPage() {
 </svg>`.trim());
 
   return (
-    <main className="flex h-full">
+    <main className="flex h-dvh">
       <Sidebar
+        escondidaNoCelular={Boolean(activeChat)}
         me={me}
         chats={chats}
         users={users}
@@ -457,21 +492,14 @@ export default function ChatPage() {
         }}
         onUpdateMe={(updated) => setMe(updated)}
         onSearch={buscarConversas}
-        footer={
-          chamada.state.status !== "idle" && chamada.state.status !== "incoming" ? (
-            <CallBar
-              call={chamada.state}
-              peer={contatoDaChamada}
-              onOpenChat={() => chatDaChamada && abrirConversa(chatDaChamada)}
-              onToggleMute={chamada.toggleMute}
-              onHangUp={chamada.hangUp}
-            />
-          ) : null
-        }
+        footer={barraDaChamada}
       />
 
       {activeChat ? (
-        <ChatWindow
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* No celular a lista fica escondida com a conversa aberta; a barra vai para o topo. */}
+          {barraDaChamada && <div className="md:hidden">{barraDaChamada}</div>}
+          <ChatWindow
           chat={activeChat}
           me={me}
           messages={messages}
@@ -487,10 +515,12 @@ export default function ChatPage() {
             const contato = otherParticipant(activeChat, me.id);
             if (contato) chamada.start(activeChat.id, contato.id);
           }}
+          onBack={voltarParaLista}
         />
+        </div>
       ) : (
         <section 
-          className="flex flex-1 flex-col items-center justify-center border-l border-slate-800 bg-slate-950 text-center"
+          className="hidden flex-1 flex-col items-center justify-center border-l border-slate-800 bg-slate-950 text-center md:flex"
           style={{ backgroundImage: `url("data:image/svg+xml,${bgStars}")`, backgroundSize: '300px 300px' }}
         >
           <div className="mb-4 flex items-center justify-center">

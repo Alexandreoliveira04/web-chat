@@ -22,6 +22,7 @@ interface Props {
   onOpenSettings: () => void;
   onStartCall: () => void;
   emChamada: boolean;
+  onBack: () => void;
 }
 
 export default function ChatWindow({
@@ -37,6 +38,7 @@ export default function ChatWindow({
   onOpenSettings,
   onStartCall,
   emChamada,
+  onBack,
 }: Props) {
   const [texto, setTexto] = useState("");
   const [busca, setBusca] = useState("");
@@ -168,9 +170,17 @@ export default function ChatWindow({
 </svg>`.trim());
 
   return (
-    <div className="flex min-w-0 flex-1 overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <section className="flex min-w-0 flex-1 flex-col bg-slate-950">
-        <header className="flex items-center gap-3 border-b border-slate-800 bg-slate-900 p-4">
+        <header className="flex items-center gap-2 border-b border-slate-800 bg-slate-900 p-3 md:gap-3 md:p-4">
+          <button
+            type="button"
+            onClick={onBack}
+            title="Voltar para as conversas"
+            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 md:hidden"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
           <button type="button" onClick={() => setShowInfo(true)} className="transition hover:opacity-80 shrink-0">
             <Avatar name={chatTitle(chat, me.id)} url={chatAvatarUrl(chat, me.id)} />
           </button>
@@ -191,7 +201,7 @@ export default function ChatWindow({
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </button>
         
-          <div className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1">
+          <div className="hidden shrink-0 items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 sm:flex">
             <input
             type="text"
             placeholder="Buscar mensagem..."
@@ -275,7 +285,7 @@ export default function ChatWindow({
         <div ref={fim} />
       </div>
 
-      <form onSubmit={enviar} className="flex gap-2 border-t border-slate-800 bg-slate-900 p-4 relative">
+      <form onSubmit={enviar} className="relative flex gap-2 border-t border-slate-800 bg-slate-900 p-3 md:p-4">
         <div ref={emojiContainerRef} className="relative">
           <button
             type="button"
@@ -317,7 +327,7 @@ export default function ChatWindow({
           )}
         </button>
         <input
-          className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 outline-none focus:border-emerald-500"
+          className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 outline-none focus:border-emerald-500"
           placeholder="Mensagem"
           value={texto}
           maxLength={2000}
@@ -325,7 +335,7 @@ export default function ChatWindow({
         />
         <button
           type="submit"
-          className="rounded-lg bg-emerald-600 px-5 font-medium text-white transition hover:bg-emerald-500"
+          className="shrink-0 rounded-lg bg-emerald-600 px-4 font-medium text-white transition hover:bg-emerald-500 md:px-5"
         >
           Enviar
         </button>

@@ -19,6 +19,8 @@ interface Props {
   onUpdateMe?: (updated: User) => void;
   onSearch?: (term: string) => void;
   footer?: ReactNode;
+  /** No celular, a lista some enquanto uma conversa está aberta. */
+  escondidaNoCelular?: boolean;
 }
 
 export default function Sidebar({
@@ -34,6 +36,7 @@ export default function Sidebar({
   onUpdateMe,
   onSearch,
   footer,
+  escondidaNoCelular = false,
 }: Props) {
   const [busca, setBusca] = useState("");
   const [mostrarPerfil, setMostrarPerfil] = useState(false);
@@ -73,7 +76,9 @@ export default function Sidebar({
         .filter((user) => user.name.toLowerCase().includes(termo));
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-r border-slate-800 bg-slate-900">
+    <aside
+      className={`${escondidaNoCelular ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-r border-slate-800 bg-slate-900 md:w-80`}
+    >
       <header className="relative flex items-center justify-between border-b border-slate-800 p-4">
         <button
           type="button"
