@@ -18,7 +18,9 @@ SERVICE="${SERVICE:-webchat}"
 BUCKET="${BUCKET:-${PROJECT_ID}-webchat-files}"
 RUN_SA_NAME="${RUN_SA_NAME:-webchat-run}"
 BUDGET_NAME="${BUDGET_NAME:-webchat-custo-zero}"
-BUDGET_AMOUNT="${BUDGET_AMOUNT:-1}"             # na moeda da conta de faturamento
+# Rede de seguranca do projeto inteiro, na moeda da conta de faturamento. O limite de gastos
+# nativo do Google (configurado no console, ver docs/deploy.md) so cobre o Cloud Run.
+BUDGET_AMOUNT="${BUDGET_AMOUNT:-6}"
 BUDGET_TOPIC="${BUDGET_TOPIC:-webchat-orcamento}"
 GUARD_SA_NAME="${GUARD_SA_NAME:-webchat-billing-guard}"
 GUARD_FUNCTION="${GUARD_FUNCTION:-webchat-billing-guard}"
@@ -108,8 +110,11 @@ if [[ -z "$BUDGET_ID" ]]; then
 		--threshold-rule=percent=0.01 --threshold-rule=percent=0.5 --threshold-rule=percent=1.0 \
 		--notifications-rule-pubsub-topic="$TOPIC_PATH" --quiet
 else
+	CURRENCY="$(gcloud billing budgets describe "$BUDGET_ID" --billing-account="$BILLING_ACCOUNT" \
+		--format='value(amount.specifiedAmount.currencyCode)')"
 	gcloud billing budgets update "$BUDGET_ID" --billing-account="$BILLING_ACCOUNT" \
-		--notifications-rule-pubsub-topic="$TOPIC_PATH" --quiet
+		--budget-amount="${BUDGET_AMOUNT}${CURRENCY:-USD}" \
+		--notifications-rule-pubsub-topic="$TOPIC_PATH" --quiet >/dev/null
 fi
 
 step "Segredos: chave do JWT (gerada uma vez) e senha do banco"
