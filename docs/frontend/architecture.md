@@ -134,8 +134,10 @@ O estado da chamada fica na página `/chat`, e não dentro da conversa: assim d�
 por outras conversas sem desligar. Se a conexão STOMP cair e voltar, a chamada é encerrada
 no cliente, porque o servidor já a encerrou ao perder a sessão.
 
-Para descobrir o próprio endereço público, o navegador usa o STUN público do Google. Não há
-servidor TURN (ver [limitações](#limitações-conhecidas)).
+Antes de conectar, o hook busca a lista de servidores STUN/TURN no backend
+(`GET /calls/ice-servers`). O STUN descobre o endereço público; quando a conexão direta é
+bloqueada (4G, firewalls), o áudio passa pelo TURN. Se a busca falhar, liga só com um STUN
+público de reserva e tenta buscar de novo na próxima chamada.
 
 > **Microfone exige contexto seguro.** O navegador só libera `getUserMedia` em HTTPS ou em
 > `localhost`. Em outro host sem HTTPS, o botão de ligar mostra o aviso e não liga.
@@ -193,8 +195,8 @@ daria 404.
 - **Sem testes automatizados de front** (o backend cobre a API). Um próximo passo natural
   seria Testing Library para os componentes e Playwright para o fluxo completo.
 - **Sem reações ou respostas** — seguem fora do escopo.
-- **Chamadas só individuais e sem TURN**: atrás de redes restritivas o áudio pode não
-  conectar.
+- **Chamadas só individuais**; o TURN do deploy tem cota (ver
+  [deploy](../deploy.md#limitações)).
 - **Lint com erros antigos**: `npx eslint` acusa 3 erros que já existiam (uma ref atribuída
   durante o render, um `any` e um `@ts-ignore`). O `npm run build` passa mesmo assim.
 - **Busca limitada**: a barra lateral filtra por nome, e a busca dentro da conversa só

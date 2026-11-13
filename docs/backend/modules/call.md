@@ -12,9 +12,10 @@ avisa que alguém está ligando e repassa as descrições de mídia (SDP) e os c
 
 ```text
 call/
+├── controller/   CallController
 ├── dto/          CallEventResponse, CallEventType, CallEndReason,
 │                 CallSignalRequest, CallSignalResponse, SignalType
-├── service/      CallService
+├── service/      CallService, IceServersService
 └── websocket/    CallWebSocketController
 ```
 
@@ -39,6 +40,33 @@ Ana (liga)                         servidor                        Bia (recebe)
 
 Os papéis são fixos: quem ligou cria a oferta (`OFFER`) depois do `ACCEPTED`; quem atendeu
 responde (`ANSWER`). Por isso não existe a disputa de duas ofertas ao mesmo tempo.
+
+## Servidores STUN/TURN
+
+```http
+GET /api/v1/calls/ice-servers      (exige login)
+```
+
+Devolve a lista `iceServers` que o navegador passa ao `RTCPeerConnection`:
+
+```json
+[
+  { "urls": "stun:stun.relay.metered.ca:80" },
+  { "urls": "turn:global.relay.metered.ca:443", "username": "…", "credential": "…" }
+]
+```
+
+- O **STUN** só descobre o endereço público de cada aparelho. Quando a conexão direta é
+  bloqueada (4G, firewalls, NAT restritivo), o áudio precisa passar por um **TURN**, que o
+  repassa. Sem ele, a chamada fica em "Conectando…" e encerra.
+- A lista vem da variável **`ICE_SERVERS`** (`app.webrtc.ice-servers`), em JSON, porque o TURN
+  tem credenciais e o repositório é público. No deploy ela fica no Secret Manager (ver
+  [deploy](../../deploy.md)). Sem a variável, vale só o STUN público do Google.
+- O `IceServersService` valida a lista na subida: JSON inválido, lista vazia ou servidor sem
+  `urls` impedem a aplicação de subir, para o erro aparecer no deploy e não no meio de uma
+  chamada.
+- A rota exige login, mas qualquer usuário logado vê as credenciais: o navegador precisa
+  delas para usar o TURN. O provedor limita o uso pela própria cota.
 
 ## WebSocket
 
@@ -115,6 +143,8 @@ criptografado (DTLS-SRTP) direto entre os navegadores.
 
 | Classe | Tipo | Cobre |
 | ------ | ---- | ----- |
+| `IceServersServiceTest` | unitário | sem configuração usa só STUN; lista configurada devolvida como veio; JSON inválido, objeto, lista vazia ou servidor sem `urls` impedem a subida |
+| `CallControllerTest` | `@WebMvcTest` | a rota devolve a lista de servidores |
 | `CallServiceTest` | unitário (Mockito) | toca para os dois; offline (`UNAVAILABLE`); ocupado (`BUSY`); não liga duas vezes nem em grupo; só quem recebe atende; motivo do fim conforme quem e quando; sinal só entre as abas da chamada; queda de aba encerra e aba desconhecida não |
 | `CallIntegrationTest` | `@SpringBootTest(RANDOM_PORT)` + cliente STOMP real | chamada completa (toca, atende, oferta e resposta, desliga); queda de conexão; offline e ocupado; erros `403`/`404`/`400` só para quem enviou |
 
@@ -124,9 +154,9 @@ criptografado (DTLS-SRTP) direto entre os navegadores.
 
 - **Só chamadas individuais.** Chamada em grupo exigiria uma conexão por par de
   participantes (até ~4–5 pessoas) ou um servidor de mídia (SFU), como o LiveKit.
-- **Sem servidor TURN.** O frontend usa só um STUN público. Na mesma rede ou entre redes
-  comuns funciona; atrás de NAT restritivo (redes corporativas, alguns 4G), a conexão de
-  áudio pode falhar. Um container `coturn` resolveria.
+- **TURN com cota.** No deploy, o TURN é o plano grátis da Metered (500 MB de áudio
+  repassado). Ao acabar, as chamadas entre redes restritivas voltam a não conectar até
+  trocar de provedor ou de plano; muda só a variável `ICE_SERVERS`.
 - **Microfone exige contexto seguro.** O navegador só libera o microfone em HTTPS ou em
   `localhost`.
 - **Uma instância só.** Como o broker e a presença, o estado das chamadas vive na memória do
