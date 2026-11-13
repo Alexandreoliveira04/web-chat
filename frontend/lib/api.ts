@@ -149,6 +149,10 @@ export const messagesApi = {
     request<{ markedAsRead: number }>(`/chats/${chatId}/messages/read`, { method: 'PATCH' }),
 };
 
+export const callsApi = {
+  iceServers: () => request<RTCIceServer[]>('/calls/ice-servers'),
+};
+
 export const filesApi = {
   upload: (file: File) => {
     const formData = new FormData();
