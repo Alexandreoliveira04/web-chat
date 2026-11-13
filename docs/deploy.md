@@ -52,12 +52,29 @@ URL da aplicação (`https://webchat-<número>.us-central1.run.app`). Para publi
 versão, rode o mesmo comando.
 
 Variáveis opcionais: `REGION` (padrão `us-central1`), `SERVICE`, `BUCKET`, `BUDGET_AMOUNT`
-(padrão `1`, na moeda da conta de faturamento).
+(padrão `6`, na moeda da conta de faturamento).
 
 ## Trava de custo
 
-O Google Cloud não tem um teto nativo de gastos: o orçamento só avisa. Por isso o script
-instala uma trava, no padrão documentado pelo próprio Google:
+O uso normal fica no nível gratuito. Para o caso de algo sair do previsto, há duas camadas,
+pensadas para o gasto nunca passar de R$ 10:
+
+| Camada | Cobre | Valor | O que faz |
+| ------ | ----- | ----- | --------- |
+| Limite de gastos nativo do Google (console) | só o **Cloud Run**, onde está quase todo o custo possível | R$ 3 | pausa o serviço do app |
+| Trava do script (`webchat-custo-zero`) | **o projeto inteiro** (Cloud Storage, build, imagens...) | R$ 6 | desliga o faturamento do projeto |
+
+**Limite de gastos nativo.** Em *Faturamento → Orçamentos e limites*, crie um orçamento
+mensal para o projeto com o serviço **Cloud Run**, valor R$ 3, alertas em 50%, 80% e 100% e
+o limite de gastos ativado. Hoje esse recurso só vale para um serviço por vez, e só para
+Cloud Run, Cloud Run Functions, Gemini API e Vertex AI, por isso ele não substitui a trava
+do script. Não marque "Todos os serviços": isso inclui o Cloud Run Functions, onde a trava
+roda, e o limite poderia pausá-la. **Não use limite de R$ 0,00**: o primeiro centavo de
+arredondamento já pausa os serviços, e eles só voltam no mês seguinte ou suspendendo o
+limite à mão.
+
+**Trava do script.** O Google Cloud não tem um teto de gastos para o projeto todo, então o
+script instala uma, no padrão documentado pelo próprio Google:
 
 ```text
 orçamento (gasto do mês) ──► tópico Pub/Sub ──► função webchat-billing-guard
@@ -69,11 +86,12 @@ orçamento (gasto do mês) ──► tópico Pub/Sub ──► função webchat-
 - O orçamento `webchat-custo-zero` publica o gasto do mês várias vezes por dia e manda
   e-mails aos administradores do faturamento ao chegar a 1%, 50% e 100% do limite.
 - A função [`deploy/billing-guard/main.py`](../deploy/billing-guard/main.py) desliga o
-  faturamento quando o gasto passa do limite (`BUDGET_AMOUNT`, padrão 1 na moeda da conta).
+  faturamento quando o gasto passa do limite (`BUDGET_AMOUNT`, padrão 6 na moeda da conta).
   Sem faturamento, todos os serviços param e nada mais é cobrado.
 - A conta de serviço `webchat-billing-guard` só pode gerenciar o faturamento deste projeto.
-- **Ressalva:** os dados de custo do Google chegam com algumas horas de atraso, então podem
-  sobrar alguns centavos de cobrança antes de a trava disparar.
+- **Ressalva:** os dados de custo chegam com até 24 horas de atraso, então as duas camadas
+  podem agir um pouco depois do valor exato. Os limites mais baixos que R$ 10 deixam essa
+  margem.
 - **Para voltar** depois de a trava disparar: religue o faturamento do projeto no console
   (Faturamento → Minhas contas → vincular o projeto) e rode o script de novo.
 
@@ -127,6 +145,18 @@ automaticamente; o `GcsConfig` só troca o endereço do emulador pelo do Google 
 
 **Sem administrador inicial.** O script não define `ADMIN_EMAIL`/`ADMIN_PASSWORD`. Para ter
 um, acrescente as duas variáveis no serviço.
+
+## No dia da avaliação
+
+O servidor desliga sem uso, e o primeiro acesso depois disso leva de 10 a 20 segundos. Para
+uma avaliação, deixe uma instância sempre ligada durante o período e volte depois:
+
+```bash
+gcloud run services update webchat --region=us-central1 --min-instances=1   # antes
+gcloud run services update webchat --region=us-central1 --min-instances=0   # depois
+```
+
+Algumas horas ou um dia ligado ficam no nível gratuito ou custam centavos.
 
 ## Limitações
 
