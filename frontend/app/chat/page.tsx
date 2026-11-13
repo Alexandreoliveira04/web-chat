@@ -15,6 +15,8 @@ import { otherParticipant } from "@/lib/format";
 import { useVoiceCall } from "@/lib/useVoiceCall";
 import type { Chat, Message, User } from "@/lib/types";
 
+const MINUTOS_ATE_DESCONECTAR = 5;
+
 export default function ChatPage() {
   const router = useRouter();
 
@@ -265,6 +267,38 @@ export default function ChatPage() {
     document.addEventListener("visibilitychange", aoVoltar);
     return () => document.removeEventListener("visibilitychange", aoVoltar);
   }, [chats, marcarComoLida]);
+
+  // Aba em segundo plano por 5 minutos: desconecta o WebSocket para o servidor poder
+  // desligar quando ninguém está usando (no Cloud Run, conexão aberta conta como uso).
+  // Ao voltar, reconecta; o onConnect de reconexão recarrega conversas e histórico.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    function aoMudarVisibilidade() {
+      const client = clientRef.current;
+      if (!client) return;
+
+      if (document.hidden) {
+        timer = setTimeout(() => {
+          if (document.hidden && chamadaRef.current.state.status === "idle") {
+            client.deactivate();
+            setConectado(false);
+          }
+        }, MINUTOS_ATE_DESCONECTAR * 60_000);
+        return;
+      }
+
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (!client.active) client.activate();
+    }
+
+    document.addEventListener("visibilitychange", aoMudarVisibilidade);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", aoMudarVisibilidade);
+    };
+  }, []);
 
   useEffect(() => {
     function onEscKeyDown(e: KeyboardEvent) {
