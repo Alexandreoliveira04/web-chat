@@ -25,6 +25,10 @@ Interface em Next.js 16 + TypeScript, publicada como export estático e servida 
   - [componentes](frontend/modules/components.md) — barra lateral, janela de conversa, painel de detalhes, chamada, modais
   - [lib](frontend/modules/libs.md) — cliente REST, STOMP, chamada de voz, anexos, tipos e formatação
 
+## Deploy
+
+- [Google Cloud](deploy.md) — Cloud Run, Cloud SQL e Cloud Storage, com o script `deploy/gcp.sh`
+
 ## Próximos passos
 
 - [Próximos passos](roadmap.md) — pendências da branch atual e o que está planejado

@@ -14,6 +14,7 @@ web-chat/
 ├── backend/     API REST + WebSocket (Maven), uploads no Google Cloud Storage
 ├── frontend/    interface em Next.js
 ├── docs/        documentação técnica
+├── deploy/      script de deploy no Google Cloud
 ├── compose.yaml PostgreSQL, fake-gcs-server e a aplicação (profile "app")
 └── Dockerfile   build do front + backend em uma imagem só
 ```
@@ -115,4 +116,5 @@ A documentação técnica fica em [docs/](docs/README.md):
 | [Módulos do backend](docs/backend/modules/) | [shared](docs/backend/modules/shared.md), [user](docs/backend/modules/user.md), [auth](docs/backend/modules/auth.md), [chat](docs/backend/modules/chat.md), [storage](docs/backend/modules/storage.md), [call](docs/backend/modules/call.md) — inclui a referência da API REST e do WebSocket |
 | [Arquitetura do frontend](docs/frontend/architecture.md) | stack, comunicação com a API, tempo real e build |
 | [Módulos do frontend](docs/frontend/modules/) | [páginas](docs/frontend/modules/pages.md), [componentes](docs/frontend/modules/components.md), [lib](docs/frontend/modules/libs.md) |
+| [Deploy no Google Cloud](docs/deploy.md) | Cloud Run + Cloud SQL + Cloud Storage, com o script `deploy/gcp.sh` |
 | [Próximos passos](docs/roadmap.md) | o que falta antes de subir a branch atual, e o que vem depois: jogos, chamadas em grupo, arquivos, qualidade e produção |

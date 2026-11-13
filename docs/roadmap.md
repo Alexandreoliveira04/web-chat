@@ -71,9 +71,9 @@ Planejado: uma aba de jogos para jogar com quem está na conversa.
 
 ## Produção
 
-- [ ] **HTTPS**, necessário também para o microfone fora do `localhost`.
-- [ ] **Deploy** com pipeline, Cloud Storage de verdade e as variáveis de ambiente de
-  produção.
+- [ ] **Publicar no Google Cloud** com o script `deploy/gcp.sh` (Cloud Run, Cloud SQL e
+  Cloud Storage, com HTTPS automático). Ver [deploy](deploy.md).
+- [ ] **Deploy automático** a cada merge (GitHub Actions ou gatilho do Cloud Build).
 - [ ] **Broker externo** (RabbitMQ ou Redis), caso seja preciso mais de uma instância: hoje
   mensagens em tempo real, presença e chamadas vivem na memória de um processo.
 - [ ] **Refresh token**, para não precisar de novo login quando o JWT expira.

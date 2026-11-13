@@ -83,7 +83,11 @@ duas propriedades:
 | `gcs.host` | `GCS_HOST` | `http://localhost:4443` | onde o backend grava (no Compose, `http://gcs:4443`) |
 | `gcs.public-url` | `GCS_PUBLICURL` | `http://localhost:4443` | base da URL devolvida ao frontend |
 | `gcs.bucket` | `GCS_BUCKET` | `webchat-files` | bucket usado |
-| `gcs.init-bucket` | `GCS_INITBUCKET` | `true` | cria o bucket na subida; `false` no perfil `test` |
+| `gcs.init-bucket` | `GCS_INITBUCKET` | `true` | cria o bucket na subida; `false` no perfil `test` e no deploy |
+| `gcs.project-id` | `GCS_PROJECTID` | `test-project` | projeto do Google Cloud; no emulador, qualquer valor serve |
+
+No Google Cloud, `GCS_HOST` e `GCS_PUBLICURL` são `https://storage.googleapis.com`, e as
+credenciais vêm da conta de serviço do Cloud Run (ver [deploy](../../deploy.md)).
 
 As propriedades não estão no `application.yml`: os padrões ficam no próprio código
 (`@Value`), e as variáveis seguem a conversão do Spring (pontos viram `_` e o hífen some).
