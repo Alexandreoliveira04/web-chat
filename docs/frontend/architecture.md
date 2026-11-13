@@ -106,6 +106,11 @@ as abas. Sem conexão, cai para o `POST` REST. Ids repetidos são ignorados.
 **Reconexão** a cada 5 s. Ao reconectar, a lista de conversas e o histórico aberto são
 recarregados, para recuperar o que chegou enquanto a conexão esteve fora.
 
+**Aba em segundo plano.** Depois de 5 minutos com a aba escondida, e sem chamada em
+andamento, a página desconecta o STOMP; ao voltar, reconecta e recarrega como numa queda.
+No Cloud Run, uma conexão aberta mantém o servidor ligado (e contando no limite gratuito),
+então uma aba esquecida não deve segurá-lo (ver [deploy](../deploy.md#trava-de-custo)).
+
 ## Chamadas de voz
 
 O hook [`useVoiceCall`](modules/libs.md#usevoicecallts) controla a chamada inteira. O áudio
