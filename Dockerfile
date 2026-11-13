@@ -31,4 +31,5 @@ COPY --from=build /build/target/web-chat-*.jar app.jar
 USER webchat
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+# A JVM usa ate 75% da memoria do container (no Cloud Run, a memoria configurada no servico).
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]

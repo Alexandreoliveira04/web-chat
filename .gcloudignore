@@ -1,0 +1,16 @@
+# Arquivos que NAO sobem para o Cloud Build no "gcloud run deploy --source".
+# O build acontece na nuvem a partir do Dockerfile; nada gerado localmente precisa ir.
+.gcloudignore
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+backend/target/
+backend/uploads/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+docs/
+web-chat/
+__MACOSX/
