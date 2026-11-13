@@ -47,13 +47,6 @@ fi
 cd "$(dirname "$0")/.."
 gcloud config set project "$PROJECT_ID" --quiet >/dev/null
 
-BILLING_ACCOUNT="$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingAccountName)')"
-if [[ -z "$BILLING_ACCOUNT" ]]; then
-	echo "O projeto $PROJECT_ID nao tem faturamento ativo. O Cloud Run exige, mesmo no nivel gratuito." >&2
-	exit 1
-fi
-BILLING_ACCOUNT="${BILLING_ACCOUNT#billingAccounts/}"
-
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 RUN_SA="${RUN_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 GUARD_SA="${GUARD_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -63,10 +56,22 @@ APP_URL="https://${SERVICE}-${PROJECT_NUMBER}.${REGION}.run.app"
 step() { printf '\n==> %s\n' "$*"; }
 
 step "Ativando as APIs necessarias"
+# Sem faturamento ativo, esta etapa ja falha (o Cloud Run exige faturamento mesmo no gratuito).
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
 	secretmanager.googleapis.com storage.googleapis.com iam.googleapis.com \
 	billingbudgets.googleapis.com cloudbilling.googleapis.com pubsub.googleapis.com \
 	cloudfunctions.googleapis.com eventarc.googleapis.com --quiet
+
+# As APIs de faturamento contam requisicoes na cota de quem chama. Sem isto, o gcloud usa uma
+# cota compartilhada por todos os usuarios da ferramenta, que as vezes estoura (erro 429).
+gbilling() { gcloud --billing-project="$PROJECT_ID" billing "$@"; }
+
+BILLING_ACCOUNT="$(gbilling projects describe "$PROJECT_ID" --format='value(billingAccountName)')"
+if [[ -z "$BILLING_ACCOUNT" ]]; then
+	echo "O projeto $PROJECT_ID nao tem faturamento ativo. O Cloud Run exige, mesmo no nivel gratuito." >&2
+	exit 1
+fi
+BILLING_ACCOUNT="${BILLING_ACCOUNT#billingAccounts/}"
 
 # Em projetos novos, o build do "--source" roda com a conta padrao do Compute Engine,
 # que precisa do papel de builder do Cloud Run.
@@ -99,20 +104,20 @@ gcloud functions deploy "$GUARD_FUNCTION" --gen2 --runtime=python312 --region="$
 	--trigger-topic="$BUDGET_TOPIC" --service-account="$GUARD_SA" --trigger-service-account="$GUARD_SA" \
 	--memory=256Mi --max-instances=1 --set-env-vars="PROJECT_ID=$PROJECT_ID"
 
-BUDGET_ID="$(gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" \
+BUDGET_ID="$(gbilling budgets list --billing-account="$BILLING_ACCOUNT" \
 	--filter="displayName=$BUDGET_NAME" --format='value(name)' | sed 's#.*/##')"
 TOPIC_PATH="projects/$PROJECT_ID/topics/$BUDGET_TOPIC"
 if [[ -z "$BUDGET_ID" ]]; then
-	CURRENCY="$(gcloud billing accounts describe "$BILLING_ACCOUNT" --format='value(currencyCode)' 2>/dev/null || true)"
+	CURRENCY="$(gbilling accounts describe "$BILLING_ACCOUNT" --format='value(currencyCode)' 2>/dev/null || true)"
 	# Os e-mails de alerta continuam indo para os administradores do faturamento.
-	gcloud billing budgets create --billing-account="$BILLING_ACCOUNT" --display-name="$BUDGET_NAME" \
+	gbilling budgets create --billing-account="$BILLING_ACCOUNT" --display-name="$BUDGET_NAME" \
 		--budget-amount="${BUDGET_AMOUNT}${CURRENCY:-USD}" --filter-projects="projects/$PROJECT_ID" \
 		--threshold-rule=percent=0.01 --threshold-rule=percent=0.5 --threshold-rule=percent=1.0 \
 		--notifications-rule-pubsub-topic="$TOPIC_PATH" --quiet
 else
-	CURRENCY="$(gcloud billing budgets describe "$BUDGET_ID" --billing-account="$BILLING_ACCOUNT" \
+	CURRENCY="$(gbilling budgets describe "$BUDGET_ID" --billing-account="$BILLING_ACCOUNT" \
 		--format='value(amount.specifiedAmount.currencyCode)')"
-	gcloud billing budgets update "$BUDGET_ID" --billing-account="$BILLING_ACCOUNT" \
+	gbilling budgets update "$BUDGET_ID" --billing-account="$BILLING_ACCOUNT" \
 		--budget-amount="${BUDGET_AMOUNT}${CURRENCY:-USD}" \
 		--notifications-rule-pubsub-topic="$TOPIC_PATH" --quiet >/dev/null
 fi
