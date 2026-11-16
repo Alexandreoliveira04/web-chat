@@ -3,6 +3,7 @@ package br.edu.webchat.support;
 import br.edu.webchat.auth.jwt.JwtService;
 import br.edu.webchat.chat.repository.ChatRepository;
 import br.edu.webchat.chat.repository.MessageRepository;
+import br.edu.webchat.game.repository.GameRepository;
 import br.edu.webchat.user.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -63,6 +64,9 @@ public abstract class StompIntegrationTest {
 
 	@Autowired
 	protected MessageRepository messageRepository;
+
+	@Autowired
+	protected GameRepository gameRepository;
 
 	@Autowired
 	protected SimpUserRegistry userRegistry;
@@ -160,6 +164,7 @@ public abstract class StompIntegrationTest {
 	}
 
 	protected void limparBase() {
+		gameRepository.deleteAll();
 		messageRepository.deleteAll();
 		chatRepository.deleteAll();
 		userRepository.deleteAll();

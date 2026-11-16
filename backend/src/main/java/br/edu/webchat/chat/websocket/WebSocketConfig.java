@@ -26,6 +26,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 	public static final String ERRORS_QUEUE = WebSocketExceptionHandler.ERRORS_QUEUE;
 	public static final String CALLS_QUEUE = "/queue/calls";
 	public static final String CALL_SIGNAL_QUEUE = "/queue/call-signal";
+	public static final String GAMES_QUEUE = "/queue/games";
 
 	private final StompAuthInterceptor stompAuthInterceptor;
 	private final String[] allowedOrigins;

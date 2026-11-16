@@ -39,10 +39,12 @@ frontend/
 │   ├── login/page.tsx      login e cadastro no mesmo formulário
 │   └── chat/page.tsx       tela principal: estado, efeitos e handlers de tempo real
 ├── components/             Sidebar, ChatWindow, MessageItem, painel de detalhes, chamada, modais, Avatar
+│   └── games/              área de jogos, partida, tabuleiros, modal de desafio, aviso de convite
 ├── lib/
 │   ├── api.ts              cliente REST tipado e armazenamento do token
 │   ├── realtime.ts         conexão STOMP, assinaturas e envio
 │   ├── useVoiceCall.ts     chamada de voz: estado, microfone e WebRTC
+│   ├── games.ts            catálogo de jogos, textos de status e mescla de partidas
 │   ├── attachments.ts      reconhece fotos, vídeos e documentos nas mensagens
 │   ├── ringtone.ts         toque da chamada, gerado com Web Audio
 │   ├── types.ts            espelho dos DTOs da API
@@ -97,6 +99,7 @@ e a página `/chat` reage assim:
 | `/topic/users` | quem acabou de se cadastrar aparece em "Colaboradores" |
 | `/user/queue/calls` | toca, atende ou encerra a chamada (ver [chamadas de voz](#chamadas-de-voz)) |
 | `/user/queue/call-signal` | entrega a oferta, a resposta e os candidatos ICE ao WebRTC |
+| `/user/queue/games` | atualiza a partida (desafio, aceite, jogada, fim); desafio recebido mostra o aviso no canto da tela |
 | `/user/queue/errors` | mostra o erro no toast do rodapé |
 
 **Envio.** Com o WebSocket conectado, a mensagem é publicada em `/app/chats/{id}/messages` e
@@ -143,6 +146,22 @@ servidor TURN (ver [limitações](#limitações-conhecidas)).
 Para testar sozinho, abra a aplicação em `localhost:8080` com um usuário e em
 `127.0.0.1:8080` com outro: são origens diferentes, então cada uma guarda o próprio token.
 Use fone de ouvido para evitar microfonia.
+
+## Jogos
+
+O botão **🎮 Jogos** da barra lateral troca a área da conversa pela área de jogos (no
+celular, esconde a lista, como uma conversa aberta). O número no botão soma os desafios
+recebidos e as partidas em que é a vez do usuário. O ícone de controle no cabeçalho da
+conversa abre o mesmo modal de desafio, já limitado a quem está nela.
+
+O backend é a autoridade (ver [game](../backend/modules/game.md)): o front manda a jogada por
+REST e desenha o estado que volta. A resposta é aplicada na hora, e o evento em
+`/user/queue/games` atualiza o outro jogador e as outras abas; `upsertGame` (em
+`lib/games.ts`) descarta o que chegar com `updatedAt` mais antigo que o já mostrado.
+
+Cada jogo tem o próprio tabuleiro em `components/games/` (hoje, `TicTacToeBoard`); o
+`GameView` escolhe pelo `type` e cuida do que é comum: jogadores, vez, aceitar, desistir e
+revanche. Damas, xadrez, campo minado e paciência aparecem no catálogo como "em breve".
 
 ## Leitura
 

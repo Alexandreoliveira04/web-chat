@@ -98,3 +98,36 @@ export interface ApiError {
   path: string;
   fields?: Record<string, string>;
 }
+
+export type GameType = 'TIC_TAC_TOE';
+export type GameStatus = 'INVITED' | 'IN_PROGRESS' | 'FINISHED';
+export type GameResult = 'WIN' | 'DRAW' | 'RESIGNATION' | 'DECLINED' | 'CANCELED';
+
+export interface GamePlayer {
+  id: number;
+  name: string;
+  avatarUrl: string | null;
+}
+
+/** Jogo da velha: 9 casas linha por linha, `X`, `O` ou `.` (vazia). Quem desafiou é o X. */
+export interface TicTacToeState {
+  board: string;
+  toMove: 0 | 1;
+}
+
+/** Partida entre dois colaboradores. `challenger` é o jogador 0; `opponent`, o 1. */
+export interface Game {
+  id: number;
+  type: GameType;
+  status: GameStatus;
+  result: GameResult | null;
+  chatId: number | null;
+  challenger: GamePlayer;
+  opponent: GamePlayer;
+  turnPlayerId: number | null;
+  winnerId: number | null;
+  state: unknown;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}

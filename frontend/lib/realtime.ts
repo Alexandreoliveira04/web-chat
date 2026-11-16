@@ -1,6 +1,6 @@
 import { Client } from '@stomp/stompjs';
 import { API_URL, tokenStorage } from './api';
-import type { ApiError, CallEvent, CallSignal, ChatEvent, Message, PresenceEvent, ProfileEvent, ReadReceipt, SignalType, User } from './types';
+import type { ApiError, CallEvent, CallSignal, ChatEvent, Game, Message, PresenceEvent, ProfileEvent, ReadReceipt, SignalType, User } from './types';
 
 export interface RealtimeHandlers {
   onConnect: (reconnected: boolean) => void;
@@ -13,6 +13,7 @@ export interface RealtimeHandlers {
   onUserCreated: (user: User) => void;
   onCallEvent: (event: CallEvent) => void;
   onCallSignal: (signal: CallSignal) => void;
+  onGame: (game: Game) => void;
   onError: (message: string) => void;
 }
 
@@ -44,6 +45,7 @@ export function connectRealtime(handlers: RealtimeHandlers): Client {
       client.subscribe('/topic/users', parse<User>(handlers.onUserCreated));
       client.subscribe('/user/queue/calls', parse<CallEvent>(handlers.onCallEvent));
       client.subscribe('/user/queue/call-signal', parse<CallSignal>(handlers.onCallSignal));
+      client.subscribe('/user/queue/games', parse<Game>(handlers.onGame));
       client.subscribe('/user/queue/errors', parse<ApiError>((error) => handlers.onError(error.message)));
 
       handlers.onConnect(connectedBefore);

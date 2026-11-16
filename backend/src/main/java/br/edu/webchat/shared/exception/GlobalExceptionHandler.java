@@ -2,6 +2,7 @@ package br.edu.webchat.shared.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -106,6 +107,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 				HttpStatus.CONFLICT.value(),
 				HttpStatus.CONFLICT.getReasonPhrase(),
 				ex.getMessage(),
+				pathOf(request)));
+	}
+
+	/** Duas escritas no mesmo registro ao mesmo tempo (ex.: duas jogadas na mesma partida). */
+	@ExceptionHandler(OptimisticLockingFailureException.class)
+	public ResponseEntity<ApiError> handleOptimisticLock(OptimisticLockingFailureException ex, WebRequest request) {
+		return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(
+				HttpStatus.CONFLICT.value(),
+				HttpStatus.CONFLICT.getReasonPhrase(),
+				"Os dados mudaram enquanto a operacao era feita; tente de novo",
 				pathOf(request)));
 	}
 

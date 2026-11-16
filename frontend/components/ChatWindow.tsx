@@ -21,6 +21,7 @@ interface Props {
   onDelete: (messageId: number) => Promise<void>;
   onOpenSettings: () => void;
   onStartCall: () => void;
+  onChallenge: () => void;
   emChamada: boolean;
   onBack: () => void;
 }
@@ -37,6 +38,7 @@ export default function ChatWindow({
   onDelete,
   onOpenSettings,
   onStartCall,
+  onChallenge,
   emChamada,
   onBack,
 }: Props) {
@@ -221,6 +223,15 @@ export default function ChatWindow({
           )}
         </div>
 
+        <button
+          type="button"
+          onClick={onChallenge}
+          title="Desafiar para um jogo"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-emerald-500 hover:text-emerald-400"
+        >
+          <GamepadIcon />
+        </button>
+
         {chat.type === "DIRECT" && (
           <button
             type="button"
@@ -351,5 +362,17 @@ export default function ChatWindow({
         />
       )}
     </div>
+  );
+}
+
+function GamepadIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="12" x2="10" y2="12" />
+      <line x1="8" y1="10" x2="8" y2="14" />
+      <line x1="15" y1="13" x2="15.01" y2="13" />
+      <line x1="18" y1="11" x2="18.01" y2="11" />
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+    </svg>
   );
 }
