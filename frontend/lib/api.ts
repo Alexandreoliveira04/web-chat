@@ -1,4 +1,4 @@
-import type { ApiError, Chat, Game, GameType, MessageHistory, Message, User } from './types';
+import type { ApiError, Chat, Game, GameType, MessageHistory, Message, SoloGameType, SoloRanking, SoloResult, User } from './types';
 
 // Sem NEXT_PUBLIC_API_URL, usa caminho relativo: em producao o proprio Spring Boot
 // serve o front, entao API e front ficam na mesma origem. Em desenvolvimento, o
@@ -160,12 +160,27 @@ export const filesApi = {
 export const gamesApi = {
   list: () => request<Game[]>('/games'),
   byId: (gameId: number) => request<Game>(`/games/${gameId}`),
-  challenge: (type: GameType, opponentId: number, chatId?: number | null) =>
-    request<Game>('/games', { method: 'POST', body: body({ type, opponentId, chatId: chatId ?? null }) }),
+  /** `timeControlMinutes`: ritmo (3, 5 ou 10) nos jogos com relógio; omitido no jogo da velha. */
+  challenge: (type: GameType, opponentId: number, chatId?: number | null, timeControlMinutes?: number | null) =>
+    request<Game>('/games', {
+      method: 'POST',
+      body: body({ type, opponentId, chatId: chatId ?? null, timeControlMinutes: timeControlMinutes ?? null }),
+    }),
   accept: (gameId: number) => request<Game>(`/games/${gameId}/accept`, { method: 'POST' }),
   decline: (gameId: number) => request<Game>(`/games/${gameId}/decline`, { method: 'POST' }),
   cancel: (gameId: number) => request<Game>(`/games/${gameId}/cancel`, { method: 'POST' }),
   resign: (gameId: number) => request<Game>(`/games/${gameId}/resign`, { method: 'POST' }),
+  /** Propõe empate; se o adversário já tinha proposto, a partida empata. */
+  offerDraw: (gameId: number) => request<Game>(`/games/${gameId}/draw`, { method: 'POST' }),
+  acceptDraw: (gameId: number) => request<Game>(`/games/${gameId}/draw/accept`, { method: 'POST' }),
+  declineDraw: (gameId: number) => request<Game>(`/games/${gameId}/draw/decline`, { method: 'POST' }),
   /** A jogada vai no formato do jogo, por exemplo `{ cell: 4 }` no jogo da velha. */
   move: (gameId: number, move: unknown) => request<Game>(`/games/${gameId}/moves`, { method: 'POST', body: body(move) }),
+};
+
+export const soloApi = {
+  ranking: (game: SoloGameType, mode: string) =>
+    request<SoloRanking>(`/games/solo/${game}/ranking?mode=${encodeURIComponent(mode)}`),
+  submit: (game: SoloGameType, mode: string, durationMs: number, moves?: number) =>
+    request<SoloResult>(`/games/solo/${game}/results`, { method: 'POST', body: body({ mode, durationMs, moves: moves ?? null }) }),
 };

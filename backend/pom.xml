@@ -70,6 +70,14 @@
 			<scope>runtime</scope>
 		</dependency>
 
+		<!-- Regras do xadrez (jogadas legais, xeque-mate, empates) usadas pelo modulo game.
+		     Publicada so no JitPack, declarado em <repositories>. Licenca Apache-2.0. -->
+		<dependency>
+			<groupId>com.github.bhlangonijr</groupId>
+			<artifactId>chesslib</artifactId>
+			<version>1.3.7</version>
+		</dependency>
+
 		<!-- Google Cloud Storage: SDK oficial usado pelo modulo storage (upload de fotos e videos) -->
 		<dependency>
 			<groupId>com.google.cloud</groupId>
@@ -99,6 +107,13 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+
+	<repositories>
+		<repository>
+			<id>jitpack.io</id>
+			<url>https://jitpack.io</url>
+		</repository>
+	</repositories>
 
 	<build>
 		<resources>

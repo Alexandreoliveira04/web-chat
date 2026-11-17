@@ -3,6 +3,7 @@ package br.edu.webchat.game.service;
 import br.edu.webchat.chat.dto.ChatResponse;
 import br.edu.webchat.chat.repository.ChatRepository;
 import br.edu.webchat.chat.service.ChatService;
+import br.edu.webchat.game.dto.ClockResponse;
 import br.edu.webchat.game.dto.CreateGameRequest;
 import br.edu.webchat.game.dto.GameResponse;
 import br.edu.webchat.game.dto.PlayerResponse;
@@ -28,6 +29,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -46,6 +50,9 @@ public class GameService {
 	/** Quantas partidas terminadas a lista devolve, alem de todas as em andamento. */
 	static final int FINISHED_GAMES_LISTED = 20;
 
+	/** Ritmos aceitos nos jogos com relogio, em minutos para cada jogador. */
+	static final Set<Integer> TIME_CONTROLS_MINUTES = Set.of(3, 5, 10);
+
 	private static final Set<GameStatus> ACTIVE = Set.of(GameStatus.INVITED, GameStatus.IN_PROGRESS);
 
 	private final GameRepository gameRepository;
@@ -54,10 +61,11 @@ public class GameService {
 	private final ChatService chatService;
 	private final ApplicationEventPublisher events;
 	private final ObjectMapper objectMapper;
+	private final Clock clock;
 	private final Map<GameType, GameEngine<?>> engines = new EnumMap<>(GameType.class);
 
 	public GameService(GameRepository gameRepository, UserRepository userRepository, ChatRepository chatRepository,
-			ChatService chatService, ApplicationEventPublisher events, ObjectMapper objectMapper,
+			ChatService chatService, ApplicationEventPublisher events, ObjectMapper objectMapper, Clock clock,
 			List<GameEngine<?>> engines) {
 		this.gameRepository = gameRepository;
 		this.userRepository = userRepository;
@@ -65,6 +73,7 @@ public class GameService {
 		this.chatService = chatService;
 		this.events = events;
 		this.objectMapper = objectMapper;
+		this.clock = clock;
 		engines.forEach(engine -> this.engines.put(engine.type(), engine));
 	}
 
@@ -72,6 +81,7 @@ public class GameService {
 	public GameResponse create(String authenticatedEmail, CreateGameRequest request) {
 		User me = findUser(authenticatedEmail);
 		GameEngine<?> engine = engineOf(request.type());
+		Duration timeControl = timeControlOf(request);
 
 		if (me.getId().equals(request.opponentId())) {
 			throw new BadRequestException("Nao e possivel desafiar a si mesmo");
@@ -89,6 +99,9 @@ public class GameService {
 		Game game = new Game(request.type(), me, opponent,
 				request.chatId() == null ? null : chatRepository.getReferenceById(request.chatId()),
 				write(engine.initialState()));
+		if (timeControl != null) {
+			game.useTimeControl(timeControl);
+		}
 		gameRepository.saveAndFlush(game);
 
 		return publish(game);
@@ -121,6 +134,7 @@ public class GameService {
 		}
 
 		game.start();
+		game.startTurn(playerToMove(game, engineOf(game.getType())), clock.instant());
 		return publish(game);
 	}
 
@@ -154,18 +168,100 @@ public class GameService {
 		int player = playerIndex(game, findUser(authenticatedEmail));
 		requireInProgress(game);
 
+		stopClock(game, clock.instant());
 		game.finish(GameResult.RESIGNATION, game.player(1 - player));
 		return publish(game);
 	}
 
+	/**
+	 * Confere o relogio antes de aplicar a jogada: se o tempo de quem jogou ja tinha acabado,
+	 * a jogada nao vale e a partida termina por tempo. Jogar tambem recusa uma proposta de
+	 * empate pendente.
+	 */
 	@Transactional
 	public GameResponse move(Long gameId, String authenticatedEmail, JsonNode move) {
 		Game game = findGame(gameId);
 		int player = playerIndex(game, findUser(authenticatedEmail));
 		requireInProgress(game);
+		GameEngine<?> engine = engineOf(game.getType());
+		if (playerToMove(game, engine) != player) {
+			throw new BadRequestException("Nao e a sua vez");
+		}
 
-		play(game, engineOf(game.getType()), player, move);
+		Instant now = clock.instant();
+		if (!game.endTurn(player, now)) {
+			game.finish(GameResult.TIMEOUT, game.player(1 - player));
+			return publish(game);
+		}
+
+		play(game, engine, player, move);
+		game.clearDrawOffer();
+		if (game.getStatus() == GameStatus.IN_PROGRESS) {
+			game.startTurn(playerToMove(game, engine), now);
+		}
 		return publish(game);
+	}
+
+	/** Propoe empate ao adversario. Se ele ja tinha proposto, os dois querem: a partida empata. */
+	@Transactional
+	public GameResponse offerDraw(Long gameId, String authenticatedEmail) {
+		Game game = findGame(gameId);
+		User me = findUser(authenticatedEmail);
+		int player = playerIndex(game, me);
+		requireInProgress(game);
+		requireDrawOffers(game);
+
+		Long offeredBy = game.getDrawOfferedById();
+		if (offeredBy != null && offeredBy.equals(game.player(1 - player).getId())) {
+			stopClock(game, clock.instant());
+			game.finish(GameResult.AGREED_DRAW, null);
+		}
+		else {
+			game.offerDraw(me);
+		}
+		return publish(game);
+	}
+
+	@Transactional
+	public GameResponse acceptDraw(Long gameId, String authenticatedEmail) {
+		Game game = findGame(gameId);
+		int player = playerIndex(game, findUser(authenticatedEmail));
+		requireInProgress(game);
+		requireDrawOfferFromOpponent(game, player);
+
+		stopClock(game, clock.instant());
+		game.finish(GameResult.AGREED_DRAW, null);
+		return publish(game);
+	}
+
+	@Transactional
+	public GameResponse declineDraw(Long gameId, String authenticatedEmail) {
+		Game game = findGame(gameId);
+		int player = playerIndex(game, findUser(authenticatedEmail));
+		requireInProgress(game);
+		requireDrawOfferFromOpponent(game, player);
+
+		game.clearDrawOffer();
+		return publish(game);
+	}
+
+	@Transactional(readOnly = true)
+	public List<Long> findOutOfTime(Instant now) {
+		return gameRepository.findOutOfTime(now);
+	}
+
+	/** Encerra a partida por tempo se o jogador da vez ficou sem tempo ate {@code now}. */
+	@Transactional
+	public void expireIfOutOfTime(Long gameId, Instant now) {
+		Game game = findGame(gameId);
+		if (game.getStatus() != GameStatus.IN_PROGRESS || !game.isOutOfTime(now)) {
+			return;
+		}
+
+		int player = playerToMove(game, engineOf(game.getType()));
+		game.endTurn(player, now);
+		game.finish(GameResult.TIMEOUT, game.player(1 - player));
+		publish(game);
 	}
 
 	private <S> void play(Game game, GameEngine<S> engine, int player, JsonNode move) {
@@ -181,6 +277,38 @@ public class GameService {
 		if (outcome.finished()) {
 			game.finish(outcome.winner() == null ? GameResult.DRAW : GameResult.WIN,
 					outcome.winner() == null ? null : game.player(outcome.winner()));
+		}
+	}
+
+	/** Para o relogio descontando a vez em andamento, para o tempo final ficar certo na tela. */
+	private void stopClock(Game game, Instant now) {
+		game.endTurn(playerToMove(game, engineOf(game.getType())), now);
+	}
+
+	private static Duration timeControlOf(CreateGameRequest request) {
+		Integer minutes = request.timeControlMinutes();
+		if (!request.type().isTimed()) {
+			if (minutes != null) {
+				throw new BadRequestException("Este jogo nao tem relogio");
+			}
+			return null;
+		}
+		if (minutes == null || !TIME_CONTROLS_MINUTES.contains(minutes)) {
+			throw new BadRequestException("Escolha o ritmo da partida: 3, 5 ou 10 minutos para cada jogador");
+		}
+		return Duration.ofMinutes(minutes);
+	}
+
+	private static void requireDrawOffers(Game game) {
+		if (!game.getType().isTimed()) {
+			throw new BadRequestException("Este jogo nao aceita proposta de empate");
+		}
+	}
+
+	private static void requireDrawOfferFromOpponent(Game game, int player) {
+		Long offeredBy = game.getDrawOfferedById();
+		if (offeredBy == null || !offeredBy.equals(game.player(1 - player).getId())) {
+			throw new BadRequestException("Nao ha proposta de empate do adversario");
 		}
 	}
 
@@ -228,9 +356,8 @@ public class GameService {
 	}
 
 	private GameResponse toResponse(Game game) {
-		Long turnPlayerId = game.getStatus() == GameStatus.IN_PROGRESS
-				? game.player(playerToMove(game, engineOf(game.getType()))).getId()
-				: null;
+		int toMove = game.getStatus() == GameStatus.IN_PROGRESS ? playerToMove(game, engineOf(game.getType())) : -1;
+		Long turnPlayerId = toMove >= 0 ? game.player(toMove).getId() : null;
 
 		return new GameResponse(
 				game.getId(),
@@ -243,9 +370,23 @@ public class GameService {
 				turnPlayerId,
 				game.getWinner() == null ? null : game.getWinner().getId(),
 				readTree(game.getState()),
+				clockOf(game, toMove),
+				game.getDrawOfferedById(),
 				game.getCreatedAt(),
 				game.getUpdatedAt(),
 				game.getFinishedAt());
+	}
+
+	private ClockResponse clockOf(Game game, int toMove) {
+		if (!game.isTimed()) {
+			return null;
+		}
+		Instant now = clock.instant();
+		Long running = game.getTurnStartedAt() != null && toMove >= 0 ? game.player(toMove).getId() : null;
+		return new ClockResponse(game.getTimeControlMs(),
+				game.timeLeft(Game.CHALLENGER, toMove, now),
+				game.timeLeft(Game.OPPONENT, toMove, now),
+				running);
 	}
 
 	private <S> int playerToMove(Game game, GameEngine<S> engine) {

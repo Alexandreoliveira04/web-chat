@@ -70,6 +70,22 @@ public class GameController {
 		return gameService.resign(gameId, authentication.getName());
 	}
 
+	/** Propoe empate; se o adversario ja tinha proposto, a partida empata. So xadrez e damas. */
+	@PostMapping("/{gameId}/draw")
+	public GameResponse offerDraw(@PathVariable Long gameId, Authentication authentication) {
+		return gameService.offerDraw(gameId, authentication.getName());
+	}
+
+	@PostMapping("/{gameId}/draw/accept")
+	public GameResponse acceptDraw(@PathVariable Long gameId, Authentication authentication) {
+		return gameService.acceptDraw(gameId, authentication.getName());
+	}
+
+	@PostMapping("/{gameId}/draw/decline")
+	public GameResponse declineDraw(@PathVariable Long gameId, Authentication authentication) {
+		return gameService.declineDraw(gameId, authentication.getName());
+	}
+
 	/** O corpo e a jogada no formato do jogo, por exemplo {@code {"cell": 4}} no jogo da velha. */
 	@PostMapping("/{gameId}/moves")
 	public GameResponse move(@PathVariable Long gameId, @RequestBody JsonNode move, Authentication authentication) {

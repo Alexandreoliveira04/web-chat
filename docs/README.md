@@ -14,7 +14,7 @@ API REST + WebSocket em Java 17 e Spring Boot, organizada como monólito modular
   - [chat](backend/modules/chat.md) — conversas, grupos, mensagens, arquivos compartilhados, histórico e WebSocket
   - [storage](backend/modules/storage.md) — upload de arquivos para o Google Cloud Storage
   - [call](backend/modules/call.md) — chamadas de voz individuais (sinalização WebRTC)
-  - [game](backend/modules/game.md) — partidas entre colaboradores (jogo da velha) com o servidor como autoridade
+  - [game](backend/modules/game.md) — jogo da velha, damas e xadrez entre colaboradores, com o servidor como autoridade; ranking do campo minado e da paciência
 
 ## Frontend
 

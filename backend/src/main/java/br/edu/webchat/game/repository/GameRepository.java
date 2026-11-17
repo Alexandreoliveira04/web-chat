@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 
@@ -24,6 +25,14 @@ public interface GameRepository extends JpaRepository<Game, Long> {
 			""")
 	List<Game> findByPlayer(@Param("userId") Long userId, @Param("statuses") Collection<GameStatus> statuses,
 			Pageable pageable);
+
+	/** Partidas em andamento cujo jogador da vez ja ficou sem tempo. */
+	@Query("""
+			select g.id from Game g
+			where g.status = br.edu.webchat.game.entity.GameStatus.IN_PROGRESS
+				and g.turnDeadlineAt <= :now
+			""")
+	List<Long> findOutOfTime(@Param("now") Instant now);
 
 	@Query("""
 			select count(g) > 0 from Game g

@@ -4,6 +4,7 @@ import br.edu.webchat.game.dto.GameResponse;
 import br.edu.webchat.game.entity.GameResult;
 import br.edu.webchat.game.entity.GameStatus;
 import br.edu.webchat.game.entity.GameType;
+import br.edu.webchat.game.service.GameService;
 import br.edu.webchat.support.StompIntegrationTest;
 import br.edu.webchat.user.dto.CreateUserRequest;
 import br.edu.webchat.user.service.UserService;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.web.client.HttpClientErrorException;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,9 @@ class GameIntegrationTest extends StompIntegrationTest {
 
 	@Autowired
 	private UserService userService;
+
+	@Autowired
+	private GameService gameService;
 
 	private Long alexandreId;
 	private Long mariaId;
@@ -195,6 +200,154 @@ class GameIntegrationTest extends StompIntegrationTest {
 	}
 
 	@Test
+	void xadrezMateDoLoucoPelaApi() {
+		Long id = criarDoTipo(GameType.CHESS);
+		acao(MARIA, id, "accept");
+
+		mover(ALEXANDRE, id, Map.of("move", "f2f3"));
+		mover(MARIA, id, Map.of("move", "e7e5"));
+		assertErro(() -> mover(ALEXANDRE, id, Map.of("move", "e1e3")), HttpStatus.BAD_REQUEST, "ilegal");
+		mover(ALEXANDRE, id, Map.of("move", "g2g4"));
+		GameResponse fim = mover(MARIA, id, Map.of("move", "d8h4"));
+
+		assertThat(fim.status()).isEqualTo(GameStatus.FINISHED);
+		assertThat(fim.result()).isEqualTo(GameResult.WIN);
+		assertThat(fim.winnerId()).isEqualTo(mariaId);
+		assertThat(fim.state().get("ending").asText()).isEqualTo("CHECKMATE");
+		assertThat(fim.state().get("san").get(3).asText()).isEqualTo("Qh4#");
+	}
+
+	@Test
+	void damasComecaComAsBrancasDeQuemDesafiou() {
+		Long id = criarDoTipo(GameType.CHECKERS);
+		GameResponse aceita = acao(MARIA, id, "accept");
+
+		assertThat(aceita.turnPlayerId()).isEqualTo(alexandreId);
+		assertThat(aceita.state().get("moves")).hasSize(7);
+
+		GameResponse depois = mover(ALEXANDRE, id, Map.of("path", List.of(42, 35)));
+		assertThat(depois.turnPlayerId()).isEqualTo(mariaId);
+		assertThat(depois.state().get("board").asText().charAt(35)).isEqualTo('w');
+		assertErro(() -> mover(MARIA, id, Map.of("path", List.of(17, 33))), HttpStatus.BAD_REQUEST, "invalida");
+	}
+
+	@Test
+	void jogosDiferentesEntreAMesmaDuplaPodemCorrerJuntos() {
+		criarDoTipo(GameType.TIC_TAC_TOE);
+		criarDoTipo(GameType.CHESS);
+
+		assertThat(criarDoTipo(GameType.CHECKERS)).isNotNull();
+	}
+
+	@Test
+	void ritmoEObrigatorioNosJogosComRelogioESoNeles() {
+		assertErro(() -> criarComRitmo(GameType.CHESS, null), HttpStatus.BAD_REQUEST, "ritmo");
+		assertErro(() -> criarComRitmo(GameType.CHECKERS, 7), HttpStatus.BAD_REQUEST, "ritmo");
+		assertErro(() -> criarComRitmo(GameType.TIC_TAC_TOE, 5), HttpStatus.BAD_REQUEST, "relogio");
+
+		GameResponse xadrez = criarComRitmo(GameType.CHESS, 3);
+		assertThat(xadrez.clock().initialMs()).isEqualTo(180_000);
+		assertThat(xadrez.clock().runningPlayerId()).isNull();
+		assertThat(criar(ALEXANDRE, mariaId, null).clock()).isNull();
+	}
+
+	@Test
+	void relogioComecaNoAceiteEPassaACadaJogada() {
+		Long id = criarComRitmo(GameType.CHESS, 5).id();
+
+		GameResponse aceita = acao(MARIA, id, "accept");
+		assertThat(aceita.clock().runningPlayerId()).isEqualTo(alexandreId);
+		assertThat(aceita.clock().opponentMs()).isEqualTo(300_000);
+		assertThat(aceita.clock().challengerMs()).isBetween(295_000L, 300_000L);
+
+		GameResponse depois = mover(ALEXANDRE, id, Map.of("move", "e2e4"));
+		assertThat(depois.clock().runningPlayerId()).isEqualTo(mariaId);
+		assertThat(depois.clock().challengerMs()).isBetween(295_000L, 300_000L);
+	}
+
+	@Test
+	void tempoEsgotadoSemJogadaDaAVitoriaAoOutro() {
+		Long id = criarComRitmo(GameType.CHESS, 3).id();
+		acao(MARIA, id, "accept");
+		mover(ALEXANDRE, id, Map.of("move", "e2e4"));
+
+		// Daqui a 4 minutos o tempo da Maria (3 min) ja acabou.
+		Instant futuro = Instant.now().plusSeconds(240);
+		assertThat(gameService.findOutOfTime(futuro)).containsExactly(id);
+		gameService.expireIfOutOfTime(id, futuro);
+
+		GameResponse fim = rest.exchange(url("/api/v1/games/" + id), HttpMethod.GET, json(ALEXANDRE, null), GameResponse.class).getBody();
+		assertThat(fim.status()).isEqualTo(GameStatus.FINISHED);
+		assertThat(fim.result()).isEqualTo(GameResult.TIMEOUT);
+		assertThat(fim.winnerId()).isEqualTo(alexandreId);
+		assertThat(fim.clock().opponentMs()).isZero();
+		assertThat(fim.clock().runningPlayerId()).isNull();
+		assertThat(gameService.findOutOfTime(futuro)).isEmpty();
+	}
+
+	@Test
+	void verificacaoDeTempoNaoMexeEmQuemAindaTemTempo() {
+		Long id = criarComRitmo(GameType.CHESS, 3).id();
+		acao(MARIA, id, "accept");
+
+		gameService.expireIfOutOfTime(id, Instant.now().plusSeconds(60));
+
+		assertThat(rest.exchange(url("/api/v1/games/" + id), HttpMethod.GET, json(ALEXANDRE, null), GameResponse.class)
+				.getBody().status()).isEqualTo(GameStatus.IN_PROGRESS);
+	}
+
+	@Test
+	void empateCombinadoQuandoOAdversarioAceita() {
+		Long id = criarDoTipo(GameType.CHECKERS);
+		acao(MARIA, id, "accept");
+
+		GameResponse proposta = acao(ALEXANDRE, id, "draw");
+		assertThat(proposta.drawOfferedBy()).isEqualTo(alexandreId);
+		assertErro(() -> acao(ALEXANDRE, id, "draw/accept"), HttpStatus.BAD_REQUEST, "proposta");
+
+		GameResponse fim = acao(MARIA, id, "draw/accept");
+		assertThat(fim.status()).isEqualTo(GameStatus.FINISHED);
+		assertThat(fim.result()).isEqualTo(GameResult.AGREED_DRAW);
+		assertThat(fim.winnerId()).isNull();
+		assertThat(fim.drawOfferedBy()).isNull();
+	}
+
+	@Test
+	void propostaRecusadaOuIgnoradaComUmaJogadaSome() {
+		Long id = criarDoTipo(GameType.CHESS);
+		acao(MARIA, id, "accept");
+
+		acao(ALEXANDRE, id, "draw");
+		GameResponse recusada = acao(MARIA, id, "draw/decline");
+		assertThat(recusada.drawOfferedBy()).isNull();
+		assertThat(recusada.status()).isEqualTo(GameStatus.IN_PROGRESS);
+		assertErro(() -> acao(MARIA, id, "draw/decline"), HttpStatus.BAD_REQUEST, "proposta");
+
+		acao(MARIA, id, "draw");
+		GameResponse depoisDaJogada = mover(ALEXANDRE, id, Map.of("move", "e2e4"));
+		assertThat(depoisDaJogada.drawOfferedBy()).isNull();
+	}
+
+	@Test
+	void propostasCruzadasEmpatam() {
+		Long id = criarDoTipo(GameType.CHESS);
+		acao(MARIA, id, "accept");
+
+		acao(MARIA, id, "draw");
+		GameResponse fim = acao(ALEXANDRE, id, "draw");
+
+		assertThat(fim.result()).isEqualTo(GameResult.AGREED_DRAW);
+	}
+
+	@Test
+	void jogoDaVelhaNaoAceitaPropostaDeEmpate() {
+		Long id = criar(ALEXANDRE, mariaId, null).id();
+		acao(MARIA, id, "accept");
+
+		assertErro(() -> acao(ALEXANDRE, id, "draw"), HttpStatus.BAD_REQUEST, "empate");
+	}
+
+	@Test
 	void exigeAutenticacao() {
 		assertThatThrownBy(() -> rest.getForEntity(url("/api/v1/games"), String.class))
 				.isInstanceOfSatisfying(HttpClientErrorException.class,
@@ -209,6 +362,23 @@ class GameIntegrationTest extends StompIntegrationTest {
 
 	private GameResponse criar(String email, Long opponentId, Long chatId) {
 		return rest.exchange(url("/api/v1/games"), HttpMethod.POST, json(email, desafio(opponentId, chatId)),
+				GameResponse.class).getBody();
+	}
+
+	private Long criarDoTipo(GameType tipo) {
+		return criarComRitmo(tipo, tipo.isTimed() ? 10 : null).id();
+	}
+
+	private GameResponse criarComRitmo(GameType tipo, Integer minutos) {
+		Map<String, Object> body = desafio(mariaId, null);
+		body.put("type", tipo);
+		body.put("timeControlMinutes", minutos);
+		return rest.exchange(url("/api/v1/games"), HttpMethod.POST, json(ALEXANDRE, body), GameResponse.class)
+				.getBody();
+	}
+
+	private GameResponse mover(String email, Long gameId, Map<String, Object> jogada) {
+		return rest.exchange(url("/api/v1/games/" + gameId + "/moves"), HttpMethod.POST, json(email, jogada),
 				GameResponse.class).getBody();
 	}
 

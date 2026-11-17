@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Modal from "../Modal";
 import Avatar from "../Avatar";
-import { VERSUS_GAMES } from "@/lib/games";
+import { TIME_CONTROLS, VERSUS_GAMES } from "@/lib/games";
 import type { GameType, Participant, User } from "@/lib/types";
 
 interface Props {
@@ -11,7 +11,8 @@ interface Props {
   candidates: (User | Participant)[];
   initialType?: string;
   onClose: () => void;
-  onChallenge: (type: GameType, opponentId: number) => Promise<void>;
+  /** `minutes`: ritmo escolhido nos jogos com relógio; null nos outros. */
+  onChallenge: (type: GameType, opponentId: number, minutes: number | null) => Promise<void>;
 }
 
 export default function ChallengeModal({ candidates, initialType, onClose, onChallenge }: Props) {
@@ -19,6 +20,8 @@ export default function ChallengeModal({ candidates, initialType, onClose, onCha
   const [tipo, setTipo] = useState(initialType ?? disponiveis[0]?.key);
   const [adversario, setAdversario] = useState<number | null>(candidates.length === 1 ? candidates[0].id : null);
   const [busca, setBusca] = useState("");
+  const [minutos, setMinutos] = useState(TIME_CONTROLS[0]);
+  const comRelogio = VERSUS_GAMES.find((game) => game.key === tipo)?.timed ?? false;
   const [enviando, setEnviando] = useState(false);
 
   const termo = busca.trim().toLowerCase();
@@ -28,7 +31,7 @@ export default function ChallengeModal({ candidates, initialType, onClose, onCha
     if (!tipo || adversario === null) return;
     setEnviando(true);
     try {
-      await onChallenge(tipo as GameType, adversario);
+      await onChallenge(tipo as GameType, adversario, comRelogio ? minutos : null);
       onClose();
     } catch {
       // o erro aparece no toast da página
@@ -57,6 +60,26 @@ export default function ChallengeModal({ candidates, initialType, onClose, onCha
           </button>
         ))}
       </div>
+
+      {comRelogio && (
+        <>
+          <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Ritmo · tempo de cada jogador</p>
+          <div className="mb-5 grid grid-cols-3 gap-2">
+            {TIME_CONTROLS.map((opcao) => (
+              <button
+                key={opcao}
+                type="button"
+                onClick={() => setMinutos(opcao)}
+                className={`rounded-xl border py-2 text-sm font-medium transition ${
+                  minutos === opcao ? "border-emerald-500 bg-emerald-500/10 text-emerald-300" : "border-slate-700 hover:border-slate-500"
+                }`}
+              >
+                ⏱ {opcao} min
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <p className="mb-2 text-xs uppercase tracking-wide text-slate-500">Adversário</p>
       {candidates.length > 6 && (

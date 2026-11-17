@@ -18,6 +18,7 @@ A documentação de cada módulo fica em [modules/](modules/).
 | Tempo real | STOMP sobre WebSocket nativo, broker em memória do Spring |
 | Arquivos | Google Cloud Storage (SDK oficial); emulador `fake-gcs-server` no desenvolvimento |
 | Voz | WebRTC entre os navegadores; o servidor só faz a sinalização por STOMP |
+| Xadrez | [chesslib](https://github.com/bhlangonijr/chesslib) 1.3.7 (JitPack), para as regras e os empates |
 | Build | Maven (wrapper `mvnw` incluso) |
 | Testes | JUnit 5, Mockito, Spring Security Test, H2 em memória |
 
@@ -60,7 +61,7 @@ que o próprio Spring Boot serve, então sobe um container só. Ver
 | [chat](modules/chat.md) | Conversas, grupos, mensagens, histórico, leitura, WebSocket |
 | [storage](modules/storage.md) | Upload de arquivos para o Google Cloud Storage (emulador local no desenvolvimento) |
 | [call](modules/call.md) | Chamadas de voz individuais: sinalização WebRTC por STOMP |
-| [game](modules/game.md) | Partidas entre colaboradores (jogo da velha), com o servidor validando cada jogada |
+| [game](modules/game.md) | Partidas entre colaboradores (jogo da velha, damas, xadrez), com o servidor validando cada jogada; ranking dos jogos solo (campo minado, paciência) |
 
 Dependências permitidas entre eles:
 
@@ -135,8 +136,8 @@ O schema é versionado **exclusivamente** por migrations Flyway em
 `ddl-auto: validate` e nunca altera o banco — se a entidade e o schema divergirem, a
 aplicação não sobe, em vez de corrigir sozinha e mascarar o erro.
 
-Cada módulo cria as próprias migrations. São 13 hoje, de `V1__init.sql` a
-`V13__create_games.sql`. Os módulos `call` e `storage` não têm tabelas.
+Cada módulo cria as próprias migrations. São 15 hoje, de `V1__init.sql` a
+`V15__add_clock_and_draw_offer_to_games.sql`. Os módulos `call` e `storage` não têm tabelas.
 
 ## Divisão REST × WebSocket
 
@@ -167,7 +168,7 @@ cd backend
 ./mvnw test
 ```
 
-São 228 métodos `@Test`, em quatro camadas:
+São 273 métodos `@Test`, em quatro camadas:
 
 | Tipo | Como | Cobre |
 | ---- | ---- | ----- |

@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Avatar from "../Avatar";
 import GameView from "./GameView";
-import { SOLO_GAMES, VERSUS_GAMES, type GameInfo, gameInfo, isInviteForMe, isMyTurn, opponentOf, statusLabel } from "@/lib/games";
-import type { Game, User } from "@/lib/types";
+import SoloGameView from "./solo/SoloGameView";
+import { SOLO_GAMES, VERSUS_GAMES, type GameInfo, gameInfo, isInviteForMe, isMyTurn, opponentOf, statusLabel, timeControlMinutes } from "@/lib/games";
+import type { Game, SoloGameType, User } from "@/lib/types";
 
 export interface GameActions {
   move: (game: Game, move: unknown) => Promise<void>;
@@ -11,6 +13,9 @@ export interface GameActions {
   decline: (game: Game) => Promise<void>;
   cancel: (game: Game) => Promise<void>;
   resign: (game: Game) => Promise<void>;
+  offerDraw: (game: Game) => Promise<void>;
+  acceptDraw: (game: Game) => Promise<void>;
+  declineDraw: (game: Game) => Promise<void>;
   rematch: (game: Game) => Promise<void>;
 }
 
@@ -23,11 +28,31 @@ interface Props {
   onNewChallenge: (type?: string) => void;
   onOpenChat: (chatId: number) => void;
   onBack: () => void;
+  onError: (message: string) => void;
 }
 
-/** Área de jogos: lobby com desafios e partidas, ou a partida aberta. */
-export default function GamesPanel({ me, games, openGameId, actions, onOpenGame, onNewChallenge, onOpenChat, onBack }: Props) {
+/** Área de jogos: lobby com desafios e partidas, a partida aberta ou um jogo solo. */
+export default function GamesPanel({ me, games, openGameId, actions, onOpenGame, onNewChallenge, onOpenChat, onBack, onError }: Props) {
+  const [soloAberto, setSoloAberto] = useState<SoloGameType | null>(null);
   const aberta = games.find((game) => game.id === openGameId) ?? null;
+  // Uma partida aberta (por exemplo, pelo aviso de desafio) tem prioridade sobre o jogo solo.
+  const solo = aberta ? null : (SOLO_GAMES.find((info) => info.key === soloAberto) ?? null);
+
+  let titulo = "Jogos";
+  let subtitulo = "Desafie colaboradores ou jogue sozinho";
+  if (aberta) {
+    titulo = `${gameInfo(aberta.type).name} com ${opponentOf(aberta, me.id).name}`;
+    subtitulo = "Partida";
+  } else if (solo) {
+    titulo = `${solo.icon} ${solo.name}`;
+    subtitulo = "Jogo solo · ranking por tempo";
+  }
+
+  function voltar() {
+    if (aberta) onOpenGame(null);
+    else if (solo) setSoloAberto(null);
+    else onBack();
+  }
 
   const recebidos = games.filter((game) => isInviteForMe(game, me.id));
   const emAndamento = games.filter((game) => game.status !== "FINISHED" && !isInviteForMe(game, me.id));
@@ -38,15 +63,15 @@ export default function GamesPanel({ me, games, openGameId, actions, onOpenGame,
       <header className="flex items-center gap-3 border-b border-slate-800 bg-slate-900 p-3 md:p-4">
         <button
           type="button"
-          onClick={aberta ? () => onOpenGame(null) : onBack}
-          title={aberta ? "Voltar para os jogos" : "Fechar"}
+          onClick={voltar}
+          title={aberta || solo ? "Voltar para os jogos" : "Fechar"}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
         </button>
         <div className="min-w-0 flex-1">
-          <p className="font-medium">{aberta ? `${gameInfo(aberta.type).name} com ${opponentOf(aberta, me.id).name}` : "Jogos"}</p>
-          <p className="text-xs text-slate-400">{aberta ? "Partida" : "Desafie colaboradores ou jogue sozinho"}</p>
+          <p className="truncate font-medium">{titulo}</p>
+          <p className="text-xs text-slate-400">{subtitulo}</p>
         </div>
       </header>
 
@@ -61,9 +86,14 @@ export default function GamesPanel({ me, games, openGameId, actions, onOpenGame,
             onDecline={() => actions.decline(aberta)}
             onCancel={() => actions.cancel(aberta)}
             onResign={() => actions.resign(aberta)}
+            onOfferDraw={() => actions.offerDraw(aberta)}
+            onAcceptDraw={() => actions.acceptDraw(aberta)}
+            onDeclineDraw={() => actions.declineDraw(aberta)}
             onRematch={() => actions.rematch(aberta)}
             onOpenChat={aberta.chatId ? () => onOpenChat(aberta.chatId!) : undefined}
           />
+        ) : solo ? (
+          <SoloGameView key={solo.key} game={solo} me={me} onError={onError} />
         ) : (
           <div className="mx-auto w-full max-w-3xl space-y-8 p-4 md:p-8">
             <Secao titulo="Desafiar alguém">
@@ -77,7 +107,7 @@ export default function GamesPanel({ me, games, openGameId, actions, onOpenGame,
             <Secao titulo="Jogar sozinho">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {SOLO_GAMES.map((info) => (
-                  <CartaoDeJogo key={info.key} info={info} onClick={() => undefined} />
+                  <CartaoDeJogo key={info.key} info={info} onClick={() => setSoloAberto(info.key)} />
                 ))}
               </div>
             </Secao>
@@ -120,7 +150,7 @@ function Secao({ titulo, children }: { titulo: string; children: React.ReactNode
   );
 }
 
-function CartaoDeJogo({ info, onClick }: { info: GameInfo; onClick: () => void }) {
+function CartaoDeJogo({ info, onClick }: { info: Pick<GameInfo, "name" | "icon" | "description" | "available">; onClick: () => void }) {
   const { name, icon, description, available } = info;
   return (
     <button
@@ -153,6 +183,7 @@ function LinhaDePartida({ game, me, destaque = false, onClick }: { game: Game; m
         <p className="truncate text-sm font-medium">{outro.name}</p>
         <p className="truncate text-xs text-slate-400">
           {info.icon} {info.name}
+          {timeControlMinutes(game) !== null && ` · ⏱ ${timeControlMinutes(game)} min`}
         </p>
       </div>
       <span className={`shrink-0 text-xs ${destaque ? "font-semibold text-emerald-400" : "text-slate-400"}`}>

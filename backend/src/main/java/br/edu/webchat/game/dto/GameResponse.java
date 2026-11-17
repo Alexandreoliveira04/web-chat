@@ -15,6 +15,8 @@ import java.time.Instant;
  * @param opponent jogador 1, quem foi desafiado
  * @param turnPlayerId de quem e a vez; nulo fora de {@code IN_PROGRESS}
  * @param state tabuleiro no formato do jogo ({@code type})
+ * @param clock relogio; nulo nos jogos sem ritmo
+ * @param drawOfferedBy quem propos empate e ainda espera resposta; nulo se nao ha proposta
  */
 public record GameResponse(
 		Long id,
@@ -27,6 +29,8 @@ public record GameResponse(
 		Long turnPlayerId,
 		Long winnerId,
 		JsonNode state,
+		ClockResponse clock,
+		Long drawOfferedBy,
 		Instant createdAt,
 		Instant updatedAt,
 		Instant finishedAt

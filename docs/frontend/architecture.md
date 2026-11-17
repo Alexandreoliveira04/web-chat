@@ -40,11 +40,14 @@ frontend/
 │   └── chat/page.tsx       tela principal: estado, efeitos e handlers de tempo real
 ├── components/             Sidebar, ChatWindow, MessageItem, painel de detalhes, chamada, modais, Avatar
 │   └── games/              área de jogos, partida, tabuleiros, modal de desafio, aviso de convite
+│       └── solo/           campo minado, paciência e ranking
 ├── lib/
 │   ├── api.ts              cliente REST tipado e armazenamento do token
 │   ├── realtime.ts         conexão STOMP, assinaturas e envio
 │   ├── useVoiceCall.ts     chamada de voz: estado, microfone e WebRTC
 │   ├── games.ts            catálogo de jogos, textos de status e mescla de partidas
+│   ├── minesweeper.ts      regras do campo minado (funções puras)
+│   ├── solitaire.ts        regras da paciência (funções puras)
 │   ├── attachments.ts      reconhece fotos, vídeos e documentos nas mensagens
 │   ├── ringtone.ts         toque da chamada, gerado com Web Audio
 │   ├── types.ts            espelho dos DTOs da API
@@ -159,9 +162,31 @@ REST e desenha o estado que volta. A resposta é aplicada na hora, e o evento em
 `/user/queue/games` atualiza o outro jogador e as outras abas; `upsertGame` (em
 `lib/games.ts`) descarta o que chegar com `updatedAt` mais antigo que o já mostrado.
 
-Cada jogo tem o próprio tabuleiro em `components/games/` (hoje, `TicTacToeBoard`); o
-`GameView` escolhe pelo `type` e cuida do que é comum: jogadores, vez, aceitar, desistir e
-revanche. Damas, xadrez, campo minado e paciência aparecem no catálogo como "em breve".
+Cada jogo tem o próprio tabuleiro em `components/games/` (`TicTacToeBoard`,
+`CheckersBoard`, `ChessBoard`); o `GameView` escolhe pelo `type` e cuida do que é comum:
+jogadores, vez, aceitar, desistir, revanche e o motivo do fim (xeque, afogamento...). Damas e
+xadrez recebem do servidor a lista de jogadas legais: o tabuleiro só destaca e envia essas, sem
+repetir as regras. Quem joga de pretas vê o tabuleiro girado.
+
+- **Damas:** toca a peça e depois cada casa de parada; numa captura múltipla, uma casa por vez.
+- **Xadrez:** toca a peça e o destino; na promoção, aparece a escolha da peça. Abaixo do
+  tabuleiro fica a lista de lances em notação algébrica. As peças são SVG do conjunto
+  Chessnut (Apache 2.0), em `public/pieces/chessnut`.
+
+**Relógio e empate (xadrez e damas).** O modal de desafio pede o ritmo (10, 5 ou 3 minutos).
+Na partida, cada cartão de jogador mostra o relógio; o que está correndo fica claro e, nos
+últimos 20 segundos, vermelho e piscando, com décimos abaixo de 10 s. O tempo vem do servidor
+já calculado; `stampGame` marca quando a partida chegou (`receivedAt`) e `timeLeft` desconta o
+que passou desde então. Quando zera, quem encerra a partida é o servidor, e o resultado chega
+pelo evento. A proposta de empate aparece como uma faixa com aceitar e recusar para quem a
+recebe.
+
+**Jogos solo.** Campo minado e paciência rodam inteiros no navegador, com a lógica em
+`lib/minesweeper.ts` e `lib/solitaire.ts` (funções puras, sem React). Ao vencer, o tempo vai
+para `POST /games/solo/{jogo}/results`, e a resposta já traz o ranking atualizado e se foi
+recorde pessoal. No campo minado, o primeiro clique nunca acha mina; no celular, um botão
+alterna entre abrir casas e marcar bandeiras. Na paciência, as jogadas são por toque (carta,
+depois destino), com toque duplo para a fundação, desfazer e completar automaticamente.
 
 ## Leitura
 

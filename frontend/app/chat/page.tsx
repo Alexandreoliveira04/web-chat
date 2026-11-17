@@ -16,7 +16,7 @@ import { authApi, chatsApi, gamesApi, messagesApi, tokenStorage, usersApi } from
 import { connectRealtime, sendOverWebSocket } from "@/lib/realtime";
 import { otherParticipant } from "@/lib/format";
 import { useVoiceCall } from "@/lib/useVoiceCall";
-import { isInviteForMe, opponentOf, pendingGamesCount, upsertGame } from "@/lib/games";
+import { isInviteForMe, opponentOf, pendingGamesCount, stampGame, timeControlMinutes, upsertGame } from "@/lib/games";
 import type { Chat, Game, GameType, Message, Participant, User } from "@/lib/types";
 
 const MINUTOS_ATE_DESCONECTAR = 5;
@@ -82,7 +82,7 @@ export default function ChatPage() {
 
   const carregarJogos = useCallback(async () => {
     try {
-      setGames(await gamesApi.list());
+      setGames((await gamesApi.list()).map(stampGame));
     } catch {
       // sem a lista, a área de jogos só começa vazia; os eventos em tempo real continuam chegando
     }
@@ -278,7 +278,10 @@ export default function ChatPage() {
         },
         onCallEvent: (evento) => chamadaRef.current.handleEvent(evento),
         onCallSignal: (sinal) => chamadaRef.current.handleSignal(sinal),
-        onGame: (game) => setGames((atual) => upsertGame(atual, game)),
+        onGame: (game) => {
+          const recebida = stampGame(game);
+          setGames((atual) => upsertGame(atual, recebida));
+        },
         onError: (mensagem) => setErro(mensagem),
       });
     })();
@@ -394,7 +397,7 @@ export default function ChatPage() {
   /** Executa a ação na partida e já aplica a resposta, sem esperar o evento em tempo real. */
   async function naPartida(acao: () => Promise<Game>) {
     try {
-      const game = await acao();
+      const game = stampGame(await acao());
       setGames((atual) => upsertGame(atual, game));
       return game;
     } catch (falha) {
@@ -403,8 +406,8 @@ export default function ChatPage() {
     }
   }
 
-  async function desafiar(tipo: GameType, adversarioId: number, chatId: number | null) {
-    const game = await naPartida(() => gamesApi.challenge(tipo, adversarioId, chatId));
+  async function desafiar(tipo: GameType, adversarioId: number, chatId: number | null, minutos: number | null) {
+    const game = await naPartida(() => gamesApi.challenge(tipo, adversarioId, chatId, minutos));
     abrirJogos(game.id);
   }
 
@@ -414,7 +417,10 @@ export default function ChatPage() {
     decline: async (game) => void (await naPartida(() => gamesApi.decline(game.id))),
     cancel: async (game) => void (await naPartida(() => gamesApi.cancel(game.id))),
     resign: async (game) => void (await naPartida(() => gamesApi.resign(game.id))),
-    rematch: (game) => desafiar(game.type, opponentOf(game, me!.id).id, game.chatId),
+    offerDraw: async (game) => void (await naPartida(() => gamesApi.offerDraw(game.id))),
+    acceptDraw: async (game) => void (await naPartida(() => gamesApi.acceptDraw(game.id))),
+    declineDraw: async (game) => void (await naPartida(() => gamesApi.declineDraw(game.id))),
+    rematch: (game) => desafiar(game.type, opponentOf(game, me!.id).id, game.chatId, timeControlMinutes(game)),
   };
 
   async function iniciarConversaDireta(user: User) {
@@ -632,6 +638,7 @@ export default function ChatPage() {
             }
             onOpenChat={abrirConversaPorId}
             onBack={voltarParaLista}
+            onError={setErro}
           />
         </div>
       ) : (
@@ -674,7 +681,7 @@ export default function ChatPage() {
           candidates={desafio.candidatos}
           initialType={desafio.tipo}
           onClose={() => setDesafio(null)}
-          onChallenge={(tipo, adversarioId) => desafiar(tipo, adversarioId, desafio.chatId)}
+          onChallenge={(tipo, adversarioId, minutos) => desafiar(tipo, adversarioId, desafio.chatId, minutos)}
         />
       )}
 

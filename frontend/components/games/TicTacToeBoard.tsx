@@ -25,7 +25,7 @@ export default function TicTacToeBoard({ state, canPlay, mySymbol, onPlay }: Pro
   const vencedora = linhaVencedora(state.board);
 
   return (
-    <div className="grid aspect-square w-full max-w-xs grid-cols-3 gap-2 rounded-2xl bg-slate-800 p-2 sm:max-w-sm">
+    <div className="grid aspect-square w-full max-w-xs grid-cols-3 grid-rows-3 gap-2 rounded-2xl bg-slate-800 p-2 sm:max-w-sm">
       {state.board.split("").map((casa, indice) => {
         const vazia = casa === ".";
         const destaque = vencedora?.includes(indice);
@@ -38,7 +38,7 @@ export default function TicTacToeBoard({ state, canPlay, mySymbol, onPlay }: Pro
             disabled={!clicavel}
             onClick={() => onPlay(indice)}
             aria-label={vazia ? `Casa ${indice + 1}, vazia` : `Casa ${indice + 1}, ${casa}`}
-            className={`group flex items-center justify-center rounded-xl text-5xl font-bold transition sm:text-6xl ${
+            className={`group flex min-h-0 min-w-0 items-center justify-center rounded-xl text-5xl font-bold transition sm:text-6xl ${
               destaque ? "bg-emerald-500/25" : "bg-slate-900"
             } ${clicavel ? "cursor-pointer hover:bg-slate-700" : "cursor-default"}`}
           >

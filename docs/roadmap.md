@@ -46,11 +46,17 @@ A branch `feat/chamada-de-voz` já está no GitHub, com pull request aberto para
   área de jogos ou pela conversa, aviso de desafio recebido, revanche.
 - [x] **Validar a migration `V13` no PostgreSQL real** (`docker compose up` e subir o backend):
   os testes usam H2 com o schema gerado pelas entidades.
-- [ ] **Fase 2 — damas**: motor próprio (captura obrigatória, múltipla e dama).
-- [ ] **Fase 3 — xadrez**: regras validadas com uma biblioteca Java (roque, en passant,
-  promoção, xeque-mate, afogamento).
-- [ ] **Fase 4 — jogos solo**: campo minado e paciência no navegador, com ranking de tempo e
-  pontuação salvo no servidor.
+- [x] **Fase 2 — damas** com regras brasileiras: motor próprio com captura obrigatória, lei
+  da maioria, captura para trás e dama que voa.
+- [x] **Fase 3 — xadrez** com o chesslib: roque, en passant, promoção, xeque-mate e empates
+  (afogamento, repetição, material insuficiente, 50 lances).
+- [x] **Fase 4 — jogos solo**: campo minado e paciência no navegador, com ranking de tempo
+  salvo no servidor (`V14`, validada no PostgreSQL real).
+- [x] **Proposta de empate e relógio** no xadrez e nas damas (3, 5 ou 10 minutos), com o
+  servidor controlando o tempo (`V15`).
+- [ ] **Incremento por jogada** (por exemplo, 3+2) e ritmos personalizados.
+- [ ] **Testes automatizados** de `lib/minesweeper.ts` e `lib/solitaire.ts` quando o frontend
+  ganhar uma suíte (hoje foram conferidos com um script avulso).
 - [ ] **Jogar e conversar ao mesmo tempo**: no desktop, partida e conversa lado a lado.
 - [ ] **Tempo limite** para desafio sem resposta e partida abandonada.
 
