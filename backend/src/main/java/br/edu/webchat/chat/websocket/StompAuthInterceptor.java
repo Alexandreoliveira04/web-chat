@@ -79,7 +79,8 @@ public class StompAuthInterceptor implements ChannelInterceptor {
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CHATS_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.ERRORS_QUEUE)
 				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CALLS_QUEUE)
-				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CALL_SIGNAL_QUEUE));
+				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.CALL_SIGNAL_QUEUE)
+				|| destination.equals(WebSocketConfig.USER_PREFIX + WebSocketConfig.GAMES_QUEUE));
 	}
 
 	private static boolean isAllowedSend(String destination) {

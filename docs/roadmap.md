@@ -36,22 +36,29 @@ A branch `feat/chamada-de-voz` já está no GitHub, com pull request aberto para
 - [ ] **Histórico de chamadas** na conversa ("Chamada de voz · 12 min").
 - [ ] **Compartilhar tela**, com `getDisplayMedia`, no mesmo fluxo da chamada.
 
-## Jogos na conversa
+## Jogos
 
-Planejado: uma aba de jogos para jogar com quem está na conversa.
+Área de jogos na barra lateral e atalho no cabeçalho da conversa. Entrega em fases, na branch
+`feat/jogos`. Ver [game](backend/modules/game.md).
 
-- [ ] **Módulo `game` no backend**, com o servidor como autoridade: o navegador só envia a
-  jogada, e o servidor valida a vez e a regra, detecta vitória, salva e avisa todos os
-  participantes por STOMP.
-  - Tabela `games` (migration `V12`) com o estado em JSONB e `@Version` para jogadas
-    simultâneas.
-  - Interface `GameEngine` (`initialState`, `applyMove`, `result`): cada jogo novo é uma
-    classe nova.
-  - Teste de integração estendendo `StompIntegrationTest`.
-- [ ] **Jogo da velha** primeiro, de ponta a ponta; depois Lig 4 (2 pessoas) e forca ou quiz
-  (grupo).
-- [ ] **Painel de jogos** no `ChatDetailsSidebar` ou um botão no cabeçalho da conversa
-  (decisão em aberto).
+- [x] **Fase 1 — módulo `game` e jogo da velha** de ponta a ponta: servidor como autoridade,
+  `GameEngine` por jogo, tabela `games` (`V13`, estado em `TEXT`) com `@Version`, desafio pela
+  área de jogos ou pela conversa, aviso de desafio recebido, revanche.
+- [x] **Validar a migration `V13` no PostgreSQL real** (`docker compose up` e subir o backend):
+  os testes usam H2 com o schema gerado pelas entidades.
+- [x] **Fase 2 — damas** com regras brasileiras: motor próprio com captura obrigatória, lei
+  da maioria, captura para trás e dama que voa.
+- [x] **Fase 3 — xadrez** com o chesslib: roque, en passant, promoção, xeque-mate e empates
+  (afogamento, repetição, material insuficiente, 50 lances).
+- [x] **Fase 4 — jogos solo**: campo minado e paciência no navegador, com ranking de tempo
+  salvo no servidor (`V14`, validada no PostgreSQL real).
+- [x] **Proposta de empate e relógio** no xadrez e nas damas (3, 5 ou 10 minutos), com o
+  servidor controlando o tempo (`V15`).
+- [ ] **Incremento por jogada** (por exemplo, 3+2) e ritmos personalizados.
+- [ ] **Testes automatizados** de `lib/minesweeper.ts` e `lib/solitaire.ts` quando o frontend
+  ganhar uma suíte (hoje foram conferidos com um script avulso).
+- [ ] **Jogar e conversar ao mesmo tempo**: no desktop, partida e conversa lado a lado.
+- [ ] **Tempo limite** para desafio sem resposta e partida abandonada.
 
 ## Arquivos
 

@@ -9,13 +9,24 @@ import NewGroupModal from "@/components/NewGroupModal";
 import GroupSettingsModal from "@/components/GroupSettingsModal";
 import IncomingCall from "@/components/IncomingCall";
 import CallBar from "@/components/CallBar";
-import { authApi, chatsApi, messagesApi, tokenStorage, usersApi } from "@/lib/api";
+import GamesPanel, { type GameActions } from "@/components/games/GamesPanel";
+import ChallengeModal from "@/components/games/ChallengeModal";
+import GameInvite from "@/components/games/GameInvite";
+import { authApi, chatsApi, gamesApi, messagesApi, tokenStorage, usersApi } from "@/lib/api";
 import { connectRealtime, sendOverWebSocket } from "@/lib/realtime";
 import { otherParticipant } from "@/lib/format";
 import { useVoiceCall } from "@/lib/useVoiceCall";
-import type { Chat, Message, User } from "@/lib/types";
+import { isInviteForMe, opponentOf, pendingGamesCount, stampGame, timeControlMinutes, upsertGame } from "@/lib/games";
+import type { Chat, Game, GameType, Message, Participant, User } from "@/lib/types";
 
 const MINUTOS_ATE_DESCONECTAR = 5;
+
+/** Desafio sendo montado no modal: de onde saiu e quem pode ser desafiado. */
+interface DesafioEmAndamento {
+  candidatos: (User | Participant)[];
+  chatId: number | null;
+  tipo?: string;
+}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -32,11 +43,18 @@ export default function ChatPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarNovoGrupo, setMostrarNovoGrupo] = useState(false);
   const [mostrarParticipantes, setMostrarParticipantes] = useState(false);
+  const [games, setGames] = useState<Game[]>([]);
+  const [mostrarJogos, setMostrarJogos] = useState(false);
+  const [jogoAbertoId, setJogoAbertoId] = useState<number | null>(null);
+  const [desafio, setDesafio] = useState<DesafioEmAndamento | null>(null);
+  const [convitesDispensados, setConvitesDispensados] = useState<number[]>([]);
 
   const clientRef = useRef<Client | null>(null);
   const meRef = useRef<User | null>(null);
   const activeChatIdRef = useRef<number | null>(null);
   activeChatIdRef.current = activeChatId;
+  const mostrarJogosRef = useRef(false);
+  mostrarJogosRef.current = mostrarJogos;
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? null;
 
@@ -62,6 +80,14 @@ export default function ChatPage() {
     return listaChats;
   }, []);
 
+  const carregarJogos = useCallback(async () => {
+    try {
+      setGames((await gamesApi.list()).map(stampGame));
+    } catch {
+      // sem a lista, a área de jogos só começa vazia; os eventos em tempo real continuam chegando
+    }
+  }, []);
+
   // Precisa ser estável: a Sidebar refaz a busca sempre que esta função muda.
   const buscarConversas = useCallback((termo: string) => {
     chatsApi.list(termo).then(setChats).catch(console.error);
@@ -78,9 +104,11 @@ export default function ChatPage() {
 
   const abrirConversa = useCallback(
     async (chat: Chat) => {
-      if (activeChatIdRef.current === null) {
+      if (activeChatIdRef.current === null && !mostrarJogosRef.current) {
         window.history.pushState({ conversaAberta: true }, "");
       }
+      setMostrarJogos(false);
+      setJogoAbertoId(null);
       setActiveChatId(chat.id);
       activeChatIdRef.current = chat.id;
       setCarregando(true);
@@ -137,6 +165,7 @@ export default function ChatPage() {
         meRef.current = usuario;
         setMe(usuario);
         await carregarConversas();
+        carregarJogos();
       } catch (falha) {
         setErro(falha instanceof Error ? falha.message : "Não foi possível carregar o chat");
         return;
@@ -148,6 +177,7 @@ export default function ChatPage() {
           if (reconectado) {
             chamadaRef.current.reset();
             carregarConversas();
+            carregarJogos();
             const atual = activeChatIdRef.current;
             if (atual) {
               messagesApi.history(atual).then((historico) => {
@@ -248,6 +278,10 @@ export default function ChatPage() {
         },
         onCallEvent: (evento) => chamadaRef.current.handleEvent(evento),
         onCallSignal: (sinal) => chamadaRef.current.handleSignal(sinal),
+        onGame: (game) => {
+          const recebida = stampGame(game);
+          setGames((atual) => upsertGame(atual, recebida));
+        },
         onError: (mensagem) => setErro(mensagem),
       });
     })();
@@ -256,7 +290,7 @@ export default function ChatPage() {
       ativo = false;
       clientRef.current?.deactivate();
     };
-  }, [router, carregarConversas, recarregarConversa, marcarComoLida]);
+  }, [router, carregarConversas, carregarJogos, recarregarConversa, marcarComoLida]);
 
   useEffect(() => {
     function aoVoltar() {
@@ -308,6 +342,8 @@ export default function ChatPage() {
     function aoVoltarNoHistorico() {
       setActiveChatId(null);
       setMessages([]);
+      setMostrarJogos(false);
+      setJogoAbertoId(null);
     }
 
     window.addEventListener("popstate", aoVoltarNoHistorico);
@@ -317,15 +353,15 @@ export default function ChatPage() {
   useEffect(() => {
     function onEscKeyDown(e: KeyboardEvent) {
       // Ignorar se houver modais abertos, ou se o foco estiver num input (opcional)
-      if (e.key === "Escape" && !mostrarParticipantes && !mostrarNovoGrupo) {
+      if (e.key === "Escape" && !mostrarParticipantes && !mostrarNovoGrupo && !desafio) {
         voltarParaLista();
       }
     }
     window.addEventListener("keydown", onEscKeyDown);
     return () => window.removeEventListener("keydown", onEscKeyDown);
-  }, [mostrarParticipantes, mostrarNovoGrupo]);
+  }, [mostrarParticipantes, mostrarNovoGrupo, desafio]);
 
-  /** Fecha a conversa; se ela empilhou um estado no histórico, desfaz pelo próprio histórico. */
+  /** Fecha a conversa ou os jogos; se empilharam um estado no histórico, desfaz pelo próprio histórico. */
   function voltarParaLista() {
     if (window.history.state?.conversaAberta) {
       window.history.back();
@@ -333,7 +369,59 @@ export default function ChatPage() {
     }
     setActiveChatId(null);
     setMessages([]);
+    setMostrarJogos(false);
+    setJogoAbertoId(null);
   }
+
+  /** Abre a área de jogos no lugar da conversa; com `gameId`, já abre a partida. */
+  function abrirJogos(gameId: number | null) {
+    if (activeChatIdRef.current === null && !mostrarJogosRef.current) {
+      window.history.pushState({ conversaAberta: true }, "");
+    }
+    setActiveChatId(null);
+    activeChatIdRef.current = null;
+    setMessages([]);
+    setMostrarJogos(true);
+    setJogoAbertoId(gameId);
+  }
+
+  async function abrirConversaPorId(chatId: number) {
+    try {
+      const chat = chats.find((item) => item.id === chatId) ?? (await chatsApi.byId(chatId));
+      await abrirConversa(chat);
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : "Não foi possível abrir a conversa");
+    }
+  }
+
+  /** Executa a ação na partida e já aplica a resposta, sem esperar o evento em tempo real. */
+  async function naPartida(acao: () => Promise<Game>) {
+    try {
+      const game = stampGame(await acao());
+      setGames((atual) => upsertGame(atual, game));
+      return game;
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : "Não foi possível concluir a jogada");
+      throw falha;
+    }
+  }
+
+  async function desafiar(tipo: GameType, adversarioId: number, chatId: number | null, minutos: number | null) {
+    const game = await naPartida(() => gamesApi.challenge(tipo, adversarioId, chatId, minutos));
+    abrirJogos(game.id);
+  }
+
+  const acoesDeJogo: GameActions = {
+    move: async (game, move) => void (await naPartida(() => gamesApi.move(game.id, move))),
+    accept: async (game) => void (await naPartida(() => gamesApi.accept(game.id))),
+    decline: async (game) => void (await naPartida(() => gamesApi.decline(game.id))),
+    cancel: async (game) => void (await naPartida(() => gamesApi.cancel(game.id))),
+    resign: async (game) => void (await naPartida(() => gamesApi.resign(game.id))),
+    offerDraw: async (game) => void (await naPartida(() => gamesApi.offerDraw(game.id))),
+    acceptDraw: async (game) => void (await naPartida(() => gamesApi.acceptDraw(game.id))),
+    declineDraw: async (game) => void (await naPartida(() => gamesApi.declineDraw(game.id))),
+    rematch: (game) => desafiar(game.type, opponentOf(game, me!.id).id, game.chatId, timeControlMinutes(game)),
+  };
 
   async function iniciarConversaDireta(user: User) {
     try {
@@ -389,6 +477,15 @@ export default function ChatPage() {
       throw falha;
     }
   }
+
+  const conviteVisivel = me
+    ? games.find(
+        (game) =>
+          isInviteForMe(game, me.id) &&
+          !convitesDispensados.includes(game.id) &&
+          !(mostrarJogos && jogoAbertoId === game.id),
+      )
+    : undefined;
 
   const barraDaChamada =
     chamada.state.status !== "idle" && chamada.state.status !== "incoming" ? (
@@ -475,7 +572,7 @@ export default function ChatPage() {
   return (
     <main className="flex h-dvh">
       <Sidebar
-        escondidaNoCelular={Boolean(activeChat)}
+        escondidaNoCelular={Boolean(activeChat) || mostrarJogos}
         me={me}
         chats={chats}
         users={users}
@@ -484,6 +581,9 @@ export default function ChatPage() {
         onSelectChat={abrirConversa}
         onStartDirect={iniciarConversaDireta}
         onNewGroup={() => setMostrarNovoGrupo(true)}
+        onOpenGames={() => abrirJogos(null)}
+        pendingGames={pendingGamesCount(games, me.id)}
+        gamesOpen={mostrarJogos}
         onLogout={() => {
           chamada.hangUp();
           clientRef.current?.deactivate();
@@ -515,8 +615,31 @@ export default function ChatPage() {
             const contato = otherParticipant(activeChat, me.id);
             if (contato) chamada.start(activeChat.id, contato.id);
           }}
+          onChallenge={() =>
+            setDesafio({
+              candidatos: activeChat.participants.filter((participante) => participante.id !== me.id),
+              chatId: activeChat.id,
+            })
+          }
           onBack={voltarParaLista}
         />
+        </div>
+      ) : mostrarJogos ? (
+        <div className="flex min-w-0 flex-1 flex-col">
+          {barraDaChamada && <div className="md:hidden">{barraDaChamada}</div>}
+          <GamesPanel
+            me={me}
+            games={games}
+            openGameId={jogoAbertoId}
+            actions={acoesDeJogo}
+            onOpenGame={setJogoAbertoId}
+            onNewChallenge={(tipo) =>
+              setDesafio({ candidatos: users.filter((user) => user.id !== me.id), chatId: null, tipo })
+            }
+            onOpenChat={abrirConversaPorId}
+            onBack={voltarParaLista}
+            onError={setErro}
+          />
         </div>
       ) : (
         <section 
@@ -551,6 +674,23 @@ export default function ChatPage() {
             ✕
           </button>
         </div>
+      )}
+
+      {desafio && (
+        <ChallengeModal
+          candidates={desafio.candidatos}
+          initialType={desafio.tipo}
+          onClose={() => setDesafio(null)}
+          onChallenge={(tipo, adversarioId, minutos) => desafiar(tipo, adversarioId, desafio.chatId, minutos)}
+        />
+      )}
+
+      {conviteVisivel && (
+        <GameInvite
+          game={conviteVisivel}
+          onOpen={() => abrirJogos(conviteVisivel.id)}
+          onDismiss={() => setConvitesDispensados((atual) => [...atual, conviteVisivel.id])}
+        />
       )}
 
       {chamada.state.status === "incoming" && (

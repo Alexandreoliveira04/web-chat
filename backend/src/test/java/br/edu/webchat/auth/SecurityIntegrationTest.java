@@ -78,6 +78,15 @@ class SecurityIntegrationTest {
 	}
 
 	@Test
+	void pecasDoXadrezSaoPublicasComoOsDemaisArquivosDoFront() throws Exception {
+		// O <img> do tabuleiro nao manda o token; sem a liberacao, a peca voltaria 401.
+		int status = mockMvc.perform(get("/pieces/chessnut/wK.svg")).andReturn().getResponse().getStatus();
+		assertThat(status).isNotIn(401, 403);
+
+		mockMvc.perform(get("/qualquer/outro/arquivo.svg")).andExpect(status().isUnauthorized());
+	}
+
+	@Test
 	void registerDeveSerPublico() throws Exception {
 		mockMvc.perform(post("/api/v1/auth/register")
 						.contentType(MediaType.APPLICATION_JSON)

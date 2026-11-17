@@ -15,6 +15,10 @@ interface Props {
   onSelectChat: (chat: Chat) => void;
   onStartDirect: (user: User) => void;
   onNewGroup: () => void;
+  onOpenGames: () => void;
+  /** Desafios recebidos + partidas em que é a minha vez. */
+  pendingGames: number;
+  gamesOpen: boolean;
   onLogout: () => void;
   onUpdateMe?: (updated: User) => void;
   onSearch?: (term: string) => void;
@@ -32,6 +36,9 @@ export default function Sidebar({
   onSelectChat,
   onStartDirect,
   onNewGroup,
+  onOpenGames,
+  pendingGames,
+  gamesOpen,
   onLogout,
   onUpdateMe,
   onSearch,
@@ -141,13 +148,29 @@ export default function Sidebar({
           value={busca}
           onChange={(event) => setBusca(event.target.value)}
         />
-        <button
-          type="button"
-          onClick={onNewGroup}
-          className="w-full rounded-lg border border-slate-700 py-2 text-sm text-slate-200 transition hover:border-emerald-500 hover:text-emerald-400"
-        >
-          + Novo grupo
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onNewGroup}
+            className="rounded-lg border border-slate-700 py-2 text-sm text-slate-200 transition hover:border-emerald-500 hover:text-emerald-400"
+          >
+            + Novo grupo
+          </button>
+          <button
+            type="button"
+            onClick={onOpenGames}
+            className={`relative rounded-lg border py-2 text-sm transition hover:border-emerald-500 hover:text-emerald-400 ${
+              gamesOpen ? "border-emerald-500 text-emerald-400" : "border-slate-700 text-slate-200"
+            }`}
+          >
+            🎮 Jogos
+            {pendingGames > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 rounded-full bg-emerald-500 px-1.5 text-xs font-bold text-slate-900">
+                {pendingGames}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">

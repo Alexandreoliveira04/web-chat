@@ -1,7 +1,7 @@
 # Arquitetura — Backend
 
 API REST + WebSocket do Web Chat, em Java 17 e Spring Boot 3.5. Um único projeto Maven,
-organizado como **monólito modular**: um processo, um artefato de deploy, seis módulos com
+organizado como **monólito modular**: um processo, um artefato de deploy, sete módulos com
 fronteiras claras dentro do mesmo jar.
 
 A documentação de cada módulo fica em [modules/](modules/).
@@ -18,6 +18,7 @@ A documentação de cada módulo fica em [modules/](modules/).
 | Tempo real | STOMP sobre WebSocket nativo, broker em memória do Spring |
 | Arquivos | Google Cloud Storage (SDK oficial); emulador `fake-gcs-server` no desenvolvimento |
 | Voz | WebRTC entre os navegadores; o servidor só faz a sinalização por STOMP |
+| Xadrez | [chesslib](https://github.com/bhlangonijr/chesslib) 1.3.7 (JitPack), para as regras e os empates |
 | Build | Maven (wrapper `mvnw` incluso) |
 | Testes | JUnit 5, Mockito, Spring Security Test, H2 em memória |
 
@@ -36,7 +37,8 @@ complexidade, e o broker em memória do Spring atende o tempo real de um process
         │  ┌───────────────┐  │
         │  │ auth   user   │  │
         │  │ chat   call   │  │
-        │  │ storage shared│  │
+        │  │ game  storage │  │
+        │  │ shared        │  │
         │  └───────────────┘  │
         └─────┬────────┬──────┘
    JPA/Flyway │        │ SDK do Google
@@ -59,6 +61,7 @@ que o próprio Spring Boot serve, então sobe um container só. Ver
 | [chat](modules/chat.md) | Conversas, grupos, mensagens, histórico, leitura, WebSocket |
 | [storage](modules/storage.md) | Upload de arquivos para o Google Cloud Storage (emulador local no desenvolvimento) |
 | [call](modules/call.md) | Chamadas de voz individuais: sinalização WebRTC por STOMP |
+| [game](modules/game.md) | Partidas entre colaboradores (jogo da velha, damas, xadrez), com o servidor validando cada jogada; ranking dos jogos solo (campo minado, paciência) |
 
 Dependências permitidas entre eles:
 
@@ -66,13 +69,15 @@ Dependências permitidas entre eles:
 auth ──> user ──> storage
 chat ──> user, auth, storage
 call ──> chat, user
+game ──> chat, user
 todos ──> shared
 ```
 
 `chat` depende de `auth` em um ponto só: o `StompAuthInterceptor` reaproveita o `JwtService`
 e o `UserDetailsService` para autenticar o frame `CONNECT`. `user` e `chat` usam o `storage` para gravar
 as fotos de perfil e de grupo, e `call` usa o `chat` para saber quem participa da conversa e para os
-destinos STOMP. `storage` não depende de nenhum outro módulo.
+destinos STOMP. `game` usa o `chat` para conferir quem participa da conversa de onde saiu o
+desafio e para os destinos STOMP. `storage` não depende de nenhum outro módulo.
 
 `shared` não conhece ninguém — é o único módulo do qual todos podem depender, e por isso
 guarda apenas o que é de fato comum. Regra prática: se uma classe serve a um módulo só, ela
@@ -131,14 +136,14 @@ O schema é versionado **exclusivamente** por migrations Flyway em
 `ddl-auto: validate` e nunca altera o banco — se a entidade e o schema divergirem, a
 aplicação não sobe, em vez de corrigir sozinha e mascarar o erro.
 
-Cada módulo cria as próprias migrations. São 12 hoje, de `V1__init.sql` a
-`V12__add_avatar_to_chats.sql`. Os módulos `call` e `storage` não têm tabelas.
+Cada módulo cria as próprias migrations. São 15 hoje, de `V1__init.sql` a
+`V15__add_clock_and_draw_offer_to_games.sql`. Os módulos `call` e `storage` não têm tabelas.
 
 ## Divisão REST × WebSocket
 
 | REST | WebSocket |
 | ---- | --------- |
-| Criar e listar conversas, consultar histórico e arquivos compartilhados, perfil e foto, upload de arquivos | Envio e recebimento de mensagens, recibo de leitura, presença, mudanças de perfil, sinalização das chamadas de voz |
+| Criar e listar conversas, consultar histórico e arquivos compartilhados, perfil e foto, upload de arquivos, desafios e jogadas | Envio e recebimento de mensagens, recibo de leitura, presença, mudanças de perfil, sinalização das chamadas de voz, mudanças nas partidas |
 
 A persistência é sempre do service: os dois caminhos passam pelo mesmo `MessageService`, para
 que não existam duas escritas divergentes. Enviar por `POST` também notifica em tempo real.
@@ -163,7 +168,7 @@ cd backend
 ./mvnw test
 ```
 
-São 208 métodos `@Test`, em quatro camadas:
+São 273 métodos `@Test`, em quatro camadas:
 
 | Tipo | Como | Cobre |
 | ---- | ---- | ----- |
@@ -172,8 +177,8 @@ São 208 métodos `@Test`, em quatro camadas:
 | Repository | `@DataJpaTest` (H2) | queries, constraints, geração de id |
 | Integração | `@SpringBootTest` | cadeia de segurança real, fluxo completo, WebSocket com cliente STOMP de verdade |
 
-`RealtimeIntegrationTest` e `CallIntegrationTest` sobem o servidor em porta aleatória e
-conversam por WebSocket com clientes STOMP de verdade. Os dois estendem
+`RealtimeIntegrationTest`, `CallIntegrationTest` e `GameIntegrationTest` sobem o servidor em porta aleatória e
+conversam por WebSocket com clientes STOMP de verdade. Os três estendem
 `StompIntegrationTest` (pacote de teste `support`), que concentra a conexão, a assinatura e a
 limpeza entre testes; um teste novo de tempo real só precisa estender essa base.
 `MvpFlowIntegrationTest` percorre cadastro → login → conversa → envio → histórico → leitura.

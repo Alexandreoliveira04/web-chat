@@ -113,7 +113,7 @@ A documentação técnica fica em [docs/](docs/README.md):
 | | |
 | --- | --- |
 | [Arquitetura do backend](docs/backend/architecture.md) | stack, módulos, camadas, convenções, configuração e testes |
-| [Módulos do backend](docs/backend/modules/) | [shared](docs/backend/modules/shared.md), [user](docs/backend/modules/user.md), [auth](docs/backend/modules/auth.md), [chat](docs/backend/modules/chat.md), [storage](docs/backend/modules/storage.md), [call](docs/backend/modules/call.md) — inclui a referência da API REST e do WebSocket |
+| [Módulos do backend](docs/backend/modules/) | [shared](docs/backend/modules/shared.md), [user](docs/backend/modules/user.md), [auth](docs/backend/modules/auth.md), [chat](docs/backend/modules/chat.md), [storage](docs/backend/modules/storage.md), [call](docs/backend/modules/call.md), [game](docs/backend/modules/game.md) — inclui a referência da API REST e do WebSocket |
 | [Arquitetura do frontend](docs/frontend/architecture.md) | stack, comunicação com a API, tempo real e build |
 | [Módulos do frontend](docs/frontend/modules/) | [páginas](docs/frontend/modules/pages.md), [componentes](docs/frontend/modules/components.md), [lib](docs/frontend/modules/libs.md) |
 | [Deploy no Google Cloud](docs/deploy.md) | Cloud Run + Cloud SQL + Cloud Storage, com o script `deploy/gcp.sh` |
