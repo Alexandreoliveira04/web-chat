@@ -25,6 +25,19 @@ BUILD_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 
 step() { printf '\n==> %s\n' "$*"; }
 
+# Uma conta de servico recem-criada leva alguns segundos para o IAM enxerga-la; ate la,
+# dar papeis a ela falha com "does not exist". Tenta de novo por ate ~1 minuto.
+com_retentativa() {
+	local tentativa
+	for tentativa in 1 2 3 4 5 6; do
+		if "$@" >/dev/null 2>&1; then
+			return 0
+		fi
+		sleep 10
+	done
+	"$@" >/dev/null # ultima tentativa, mostrando o erro
+}
+
 step "Ativando as APIs da troca de tokens"
 gcloud services enable iamcredentials.googleapis.com sts.googleapis.com --quiet
 
@@ -34,13 +47,13 @@ if ! gcloud iam service-accounts describe "$DEPLOYER" >/dev/null 2>&1; then
 fi
 # Publicar a partir do codigo-fonte (build no Cloud Build e nova revisao no Cloud Run).
 for role in roles/run.sourceDeveloper roles/serviceusage.serviceUsageConsumer; do
-	gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$DEPLOYER" \
-		--role="$role" --condition=None --quiet >/dev/null
+	com_retentativa gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$DEPLOYER" \
+		--role="$role" --condition=None --quiet
 done
 # "Agir como" so as duas contas envolvidas: a do app (Cloud Run) e a do build.
 for sa in "$RUN_SA" "$BUILD_SA"; do
-	gcloud iam service-accounts add-iam-policy-binding "$sa" --member="serviceAccount:$DEPLOYER" \
-		--role=roles/iam.serviceAccountUser --quiet >/dev/null
+	com_retentativa gcloud iam service-accounts add-iam-policy-binding "$sa" --member="serviceAccount:$DEPLOYER" \
+		--role=roles/iam.serviceAccountUser --quiet
 done
 
 step "Workload Identity Federation: so $REPOSITORY, branch $BRANCH"
@@ -60,9 +73,9 @@ else
 	gcloud iam workload-identity-pools providers update-oidc "$PROVIDER" --location=global \
 		--workload-identity-pool="$POOL" --attribute-condition="$CONDITION" --quiet >/dev/null
 fi
-gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --role=roles/iam.workloadIdentityUser \
+com_retentativa gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER" --role=roles/iam.workloadIdentityUser \
 	--member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/attribute.repository/${REPOSITORY}" \
-	--quiet >/dev/null
+	--quiet
 
 step "Pronto. Valores usados em .github/workflows/deploy.yml:"
 echo "WORKLOAD_IDENTITY_PROVIDER: projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${POOL}/providers/${PROVIDER}"
