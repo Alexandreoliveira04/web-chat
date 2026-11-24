@@ -11,16 +11,17 @@ Responsável pelos colaboradores: cadastro, listagem, consulta, atualização e 
 user/
 ├── config/       AdminInitializer
 ├── controller/   UserController
-├── dto/          CreateUserRequest, UpdateUserRequest, UpdateRoleRequest, UserResponse
+├── dto/          CreateUserRequest, UpdateUserRequest, UpdateRoleRequest, UserResponse,
+│                 ProfileResponse
 ├── entity/       User, UserStatus, Role
 ├── repository/   UserRepository
-└── service/      UserService
+└── service/      UserService, ProfileChangedEvent, UserCreatedEvent
 ```
 
 ## Modelo de dados
 
 Tabela `users`, criada por `V2__create_users.sql` e alterada por
-`V3__add_role_to_users.sql`:
+`V3__add_role_to_users.sql` e `V11__add_avatar_to_users.sql`:
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
@@ -30,6 +31,7 @@ Tabela `users`, criada por `V2__create_users.sql` e alterada por
 | `password` | `VARCHAR(100)` | somente hash BCrypt |
 | `status` | `VARCHAR(20)` | `ONLINE` ou `OFFLINE` |
 | `role` | `VARCHAR(20)` | `USER` ou `ADMIN`, `DEFAULT 'USER'` |
+| `avatar_url` | `VARCHAR(500)` | URL da foto de perfil no Cloud Storage; opcional. Ampliada de 255 na `V12`, porque a URL agora carrega o nome original do arquivo |
 | `created_at` | `TIMESTAMPTZ` | preenchido no `@PrePersist` |
 | `updated_at` | `TIMESTAMPTZ` | atualizado no `@PreUpdate` |
 
@@ -46,6 +48,7 @@ garante que nenhum registro nasça administrador.
 | `GET` | `/api/v1/users` | autenticado | `200` | — |
 | `GET` | `/api/v1/users/me` | autenticado | `200` | — |
 | `PUT` | `/api/v1/users/me` | autenticado | `200` | `400` inválido |
+| `POST` | `/api/v1/users/me/avatar` | autenticado | `200` | `400` não é imagem |
 | `GET` | `/api/v1/users/{id}` | autenticado | `200` | `404` |
 | `PUT` | `/api/v1/users/{id}` | ADMIN | `200` | `400`, `403`, `404` |
 | `PATCH` | `/api/v1/users/{id}/role` | ADMIN | `200` | `400`, `403`, `404` |
@@ -123,6 +126,38 @@ Content-Type: application/json
 - alterar o **próprio** papel → `403` (`Nao e permitido alterar o proprio papel`);
 - a mudança vale na próxima requisição do usuário afetado, mesmo com o token antigo.
 
+### Foto de perfil
+
+```http
+POST /api/v1/users/me/avatar
+Content-Type: multipart/form-data   (campo "file")
+```
+
+Aceita só imagens (`Content-Type` começando com `image/`); outro tipo devolve `400`. O
+arquivo vai para o Cloud Storage pelo `uploadImage` do módulo [storage](storage.md), o mesmo
+usado na foto de grupo, e a URL devolvida é gravada em
+`avatar_url`. A resposta é o `UserResponse` atualizado. O frontend recorta a imagem antes de
+enviar.
+
+### Mudanças de perfil em tempo real
+
+Quando alguém troca o nome (`PUT /users/me` ou `PUT /users/{id}`) ou a foto, o
+`UserService` publica um `ProfileChangedEvent`. Depois do commit, o `ChatEventBroadcaster`
+do módulo chat envia um `ProfileResponse` para todos os conectados em `/topic/profiles`:
+
+```json
+{ "id": 3, "name": "Bia", "avatarUrl": "http://localhost:4443/storage/v1/b/webchat-files/o/...%2Feu.png?alt=media" }
+```
+
+As telas abertas atualizam a lista de colaboradores, os participantes das conversas e o
+próprio perfil, sem recarregar a página.
+
+Do mesmo jeito, um **cadastro novo** publica um `UserCreatedEvent`, e o `UserResponse` da
+pessoa vai para `/topic/users`: quem está com a página aberta vê a pessoa aparecer em
+"Colaboradores" na hora.
+
+O `user` não conhece WebSocket: ele só publica os eventos, no mesmo padrão das mensagens.
+
 ## Validações
 
 | Campo | Regra |
@@ -178,6 +213,12 @@ pela API.
 `@PreUpdate` não roda e conectar/desconectar não altera o `updatedAt`, que continua
 significando "perfil alterado".
 
+**Foto no Cloud Storage, não em disco.** A foto de perfil era gravada numa pasta `uploads/`
+do servidor, o que a perdia a cada nova imagem Docker e não escalava para mais de uma
+instância. Agora usa o mesmo armazenamento das mídias do chat. Fotos antigas, com URL
+`/uploads/...`, deixam de existir; nesse caso o frontend mostra as iniciais até a pessoa
+enviar uma nova foto.
+
 **Sem paginação.** `GET /users` retorna a lista completa. Adequado ao número de
 colaboradores esperado; se a listagem crescer, `Pageable` é acréscimo direto.
 
@@ -185,7 +226,7 @@ colaboradores esperado; se a listagem crescer, `Pageable` é acréscimo direto.
 
 | Classe | Tipo | Cobre |
 | ------ | ---- | ----- |
-| `UserServiceTest` | unitário (Mockito) | regras de negócio, hash, normalização, 404/409, `/me`, troca de papel, 403 no próprio papel, `ensureAdmin` |
+| `UserServiceTest` | unitário (Mockito) | regras de negócio, hash, normalização, evento de cadastro, 404/409, `/me` (com o evento de perfil), troca de papel, 403 no próprio papel, `ensureAdmin`, foto enviada ao storage com evento |
 | `UserServiceIntegrationTest` | integração (H2) | ID gerado, hash persistido, `updatedAt` |
 | `UserRepositoryTest` | `@DataJpaTest` (H2) | identity, papel padrão `USER`, `findByEmail`, constraint única |
 | `UserControllerTest` | `@WebMvcTest` | status HTTP, `/me`, `PATCH role`, ausência de senha |
@@ -193,3 +234,4 @@ colaboradores esperado; se a listagem crescer, `Pageable` é acréscimo direto.
 ## Pendências
 
 - Não há remoção de usuário — não está no escopo do MVP.
+- Trocar a foto não apaga a anterior do Cloud Storage.

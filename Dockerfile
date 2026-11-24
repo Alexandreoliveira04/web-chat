@@ -25,12 +25,11 @@ RUN mvn -B -DskipTests package
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
-RUN addgroup --system webchat && adduser --system --ingroup webchat webchat && \
-    mkdir -p /app/uploads && \
-    chown -R webchat:webchat /app/uploads
+RUN addgroup --system webchat && adduser --system --ingroup webchat webchat
 
 COPY --from=build /build/target/web-chat-*.jar app.jar
 USER webchat
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+# A JVM usa ate 75% da memoria do container (no Cloud Run, a memoria configurada no servico).
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]

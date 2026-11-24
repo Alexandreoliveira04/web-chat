@@ -9,6 +9,7 @@ import br.edu.webchat.chat.repository.ChatRepository;
 import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.shared.exception.ForbiddenException;
 import br.edu.webchat.shared.exception.NotFoundException;
+import br.edu.webchat.storage.service.FileStorageService;
 import br.edu.webchat.user.entity.User;
 import br.edu.webchat.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,6 +55,9 @@ class MessageServiceTest {
 	@Mock
 	private ApplicationEventPublisher events;
 
+	@Mock
+	private FileStorageService fileStorageService;
+
 	private MessageService messageService;
 
 	private final User alexandre = usuario(1L, "Alexandre", "alexandre@email.com");
@@ -64,7 +68,7 @@ class MessageServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator, events);
+		ChatService chatService = new ChatService(chatRepository, messageRepository, userRepository, chatCreator, events, fileStorageService);
 		messageService = new MessageService(chatService, messageRepository, events);
 
 		conversa = new Chat(alexandre, maria);
@@ -145,6 +149,26 @@ class MessageServiceTest {
 
 		assertThatThrownBy(() -> messageService.send(99L, "alexandre@email.com", new SendMessageRequest("oi")))
 				.isInstanceOf(NotFoundException.class);
+	}
+
+	// ---------- galeria ----------
+
+	@Test
+	void conteudoCompartilhadoSoParaParticipantesEComLimite() {
+		logado(maria);
+		when(chatRepository.findWithParticipantsById(10L)).thenReturn(Optional.of(conversa));
+		when(messageRepository.findSharedContent(eq(10L), any(Pageable.class))).thenReturn(mensagensDecrescentes(10, 9));
+
+		List<MessageResponse> shared = messageService.findShared(10L, "maria@email.com");
+
+		assertThat(shared).extracting(MessageResponse::id).containsExactly(10L, 9L);
+		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+		verify(messageRepository).findSharedContent(eq(10L), pageable.capture());
+		assertThat(pageable.getValue().getPageSize()).isEqualTo(MessageService.MAX_SHARED);
+
+		logado(joao);
+		assertThatThrownBy(() -> messageService.findShared(10L, "joao@email.com"))
+				.isInstanceOf(ForbiddenException.class);
 	}
 
 	// ---------- historico ----------

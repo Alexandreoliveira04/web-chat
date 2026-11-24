@@ -11,3 +11,7 @@ mvnw
 mvnw.cmd
 docs/
 *.md
+.claude/
+backend/uploads/
+web-chat/
+__MACOSX/

@@ -27,6 +27,8 @@ import java.util.List;
 @Service
 public class MessageService {
 
+	static final int MAX_SHARED = 500;
+
 	private final ChatService chatService;
 	private final MessageRepository messageRepository;
 	private final ApplicationEventPublisher events;
@@ -71,6 +73,20 @@ public class MessageService {
 
 		Long nextBefore = hasMore ? messages.get(0).id() : null;
 		return new MessageHistoryResponse(messages, hasMore, nextBefore);
+	}
+
+	/**
+	 * Arquivos e links da conversa, do mais recente ao mais antigo, para a galeria.
+	 * Nao depende da paginacao do historico: inclui o que ainda nao foi carregado no chat.
+	 */
+	@Transactional(readOnly = true)
+	public List<MessageResponse> findShared(Long chatId, String authenticatedEmail) {
+		User me = chatService.findAuthenticatedUser(authenticatedEmail);
+		chatService.findParticipantChat(chatId, me);
+
+		return messageRepository.findSharedContent(chatId, PageRequest.ofSize(MAX_SHARED)).stream()
+				.map(MessageResponse::from)
+				.toList();
 	}
 
 	@Transactional

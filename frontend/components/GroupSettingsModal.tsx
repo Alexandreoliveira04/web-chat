@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import Avatar from "./Avatar";
+import AvatarPicker from "./AvatarPicker";
 import { contactsWithoutMe } from "@/lib/format";
 import type { Chat, User } from "@/lib/types";
 
@@ -12,12 +13,23 @@ interface Props {
   users: User[];
   onClose: () => void;
   onRename: (name: string) => Promise<void>;
+  onChangeAvatar: (file: File) => Promise<void>;
   onAdd: (userId: number) => Promise<void>;
   onRemove: (userId: number) => Promise<void>;
   onLeave: () => Promise<void>;
 }
 
-export default function GroupSettingsModal({ chat, me, users, onClose, onRename, onAdd, onRemove, onLeave }: Props) {
+export default function GroupSettingsModal({
+  chat,
+  me,
+  users,
+  onClose,
+  onRename,
+  onChangeAvatar,
+  onAdd,
+  onRemove,
+  onLeave,
+}: Props) {
   const [nome, setNome] = useState(chat.name ?? "");
   const [erro, setErro] = useState<string | null>(null);
 
@@ -38,6 +50,14 @@ export default function GroupSettingsModal({ chat, me, users, onClose, onRename,
   return (
     <Modal title={chat.name ?? "Grupo"} onClose={onClose}>
       <div className="space-y-5">
+        {souDono ? (
+          <AvatarPicker name={chat.name ?? "Grupo"} url={chat.avatarUrl ?? undefined} onSave={onChangeAvatar} />
+        ) : (
+          <div className="flex justify-center">
+            <Avatar name={chat.name ?? "Grupo"} url={chat.avatarUrl ?? undefined} size="lg" />
+          </div>
+        )}
+
         {souDono && (
           <div className="space-y-2">
             <p className="text-sm text-slate-300">Nome do grupo</p>
@@ -64,7 +84,7 @@ export default function GroupSettingsModal({ chat, me, users, onClose, onRename,
           <div className="max-h-48 space-y-1 overflow-y-auto">
             {chat.participants.map((participante) => (
               <div key={participante.id} className="flex items-center gap-3 rounded-lg p-2 hover:bg-slate-800/60">
-                <Avatar name={participante.name} online={participante.status === "ONLINE"} size="sm" />
+                <Avatar name={participante.name} url={participante.avatarUrl} online={participante.status === "ONLINE"} size="sm" />
                 <span className="flex-1 truncate text-sm">
                   {participante.name}
                   {chat.ownerId === participante.id && <span className="ml-2 text-xs text-emerald-400">dono</span>}

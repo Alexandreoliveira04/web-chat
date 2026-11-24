@@ -38,12 +38,21 @@ frontend/
 │   ├── page.tsx            redireciona para /login ou /chat conforme o token
 │   ├── login/page.tsx      login e cadastro no mesmo formulário
 │   └── chat/page.tsx       tela principal: estado, efeitos e handlers de tempo real
-├── components/             Sidebar, ChatWindow, MessageItem, modais, Avatar
+├── components/             Sidebar, ChatWindow, MessageItem, painel de detalhes, chamada, modais, Avatar
+│   └── games/              área de jogos, partida, tabuleiros, modal de desafio, aviso de convite
+│       └── solo/           campo minado, paciência e ranking
 ├── lib/
 │   ├── api.ts              cliente REST tipado e armazenamento do token
-│   ├── realtime.ts         conexão STOMP e assinaturas
+│   ├── realtime.ts         conexão STOMP, assinaturas e envio
+│   ├── useVoiceCall.ts     chamada de voz: estado, microfone e WebRTC
+│   ├── games.ts            catálogo de jogos, textos de status e mescla de partidas
+│   ├── minesweeper.ts      regras do campo minado (funções puras)
+│   ├── solitaire.ts        regras da paciência (funções puras)
+│   ├── attachments.ts      reconhece fotos, vídeos e documentos nas mensagens
+│   ├── ringtone.ts         toque da chamada, gerado com Web Audio
 │   ├── types.ts            espelho dos DTOs da API
-│   └── format.ts           título, prévia, iniciais e datas
+│   ├── format.ts           título, prévia, iniciais e datas
+│   └── cropImage.ts        recorte da foto de perfil antes do envio
 └── next.config.ts          output: "export"
 ```
 
@@ -57,8 +66,8 @@ Dois caminhos, ambos autenticados com o mesmo JWT:
 
 | Caminho | Arquivo | Uso |
 | ------- | ------- | --- |
-| REST | [`lib/api.ts`](modules/libs.md#apits) | login, cadastro, perfil, conversas, histórico, leitura |
-| STOMP | [`lib/realtime.ts`](modules/libs.md#realtimets) | receber mensagens, edições, ✓✓, eventos de grupo e presença; enviar mensagem |
+| REST | [`lib/api.ts`](modules/libs.md#apits) | login, cadastro, perfil e foto, conversas, histórico, arquivos compartilhados, leitura, upload |
+| STOMP | [`lib/realtime.ts`](modules/libs.md#realtimets) | receber mensagens, edições, ✓✓, eventos de grupo, presença, perfis e eventos de chamada; enviar mensagem e sinais da chamada |
 
 `NEXT_PUBLIC_API_URL` define a base REST. Sem ela, o cliente usa o caminho relativo
 `/api/v1` e deriva o WebSocket de `window.location` — por isso o **mesmo build** funciona em
@@ -78,8 +87,9 @@ WebSocket.
 
 ## Tempo real
 
-`lib/realtime.ts` assina os cinco destinos do backend (ver
-[chat](../backend/modules/chat.md#websocket)) e a página `/chat` reage assim:
+`lib/realtime.ts` assina os destinos do backend (ver
+[chat](../backend/modules/chat.md#websocket) e [call](../backend/modules/call.md#websocket))
+e a página `/chat` reage assim:
 
 | Evento | Efeito na interface |
 | ------ | ------------------- |
@@ -88,6 +98,12 @@ WebSocket.
 | `/user/queue/read` | atualiza o ✓✓; se quem leu foi o próprio usuário em outra aba, zera o contador |
 | `/user/queue/chats` | `CREATED`/`UPDATED` recarregam a conversa; `REMOVED` tira o grupo da lista |
 | `/topic/presence` | atualiza o ponto verde no avatar e o "online/offline" no cabeçalho |
+| `/topic/profiles` | troca nome e foto de quem mudou o perfil, na lista, nas conversas e no próprio perfil |
+| `/topic/users` | quem acabou de se cadastrar aparece em "Colaboradores" |
+| `/user/queue/calls` | toca, atende ou encerra a chamada (ver [chamadas de voz](#chamadas-de-voz)) |
+| `/user/queue/call-signal` | entrega a oferta, a resposta e os candidatos ICE ao WebRTC |
+| `/user/queue/games` | atualiza a partida (desafio, aceite, jogada, fim); desafio recebido mostra o aviso no canto da tela |
+| `/user/queue/errors` | mostra o erro no toast do rodapé |
 
 **Envio.** Com o WebSocket conectado, a mensagem é publicada em `/app/chats/{id}/messages` e
 só aparece quando o servidor a devolve — um único caminho de renderização, igual para todas
@@ -95,6 +111,84 @@ as abas. Sem conexão, cai para o `POST` REST. Ids repetidos são ignorados.
 
 **Reconexão** a cada 5 s. Ao reconectar, a lista de conversas e o histórico aberto são
 recarregados, para recuperar o que chegou enquanto a conexão esteve fora.
+
+**Aba em segundo plano.** Depois de 5 minutos com a aba escondida, e sem chamada em
+andamento, a página desconecta o STOMP; ao voltar, reconecta e recarrega como numa queda.
+No Cloud Run, uma conexão aberta mantém o servidor ligado (e contando no limite gratuito),
+então uma aba esquecida não deve segurá-lo (ver [deploy](../deploy.md#trava-de-custo)).
+
+## Chamadas de voz
+
+O hook [`useVoiceCall`](modules/libs.md#usevoicecallts) controla a chamada inteira. O áudio
+vai direto entre os navegadores por **WebRTC**; o backend só repassa os sinais.
+
+```text
+idle ─► outgoing (liguei, tocando do outro lado) ─► connecting ─► active
+idle ─► incoming (estão me ligando)  ─► connecting ─► active
+qualquer estado ─► idle (desligou, recusou, caiu, não atendeu em 30 s)
+```
+
+1. Quem liga pede o microfone (`getUserMedia`) **antes** de avisar o servidor. Se o acesso
+   for negado, a chamada nem começa.
+2. Quem recebe vê o modal `IncomingCall` e ouve o toque. Ao atender, pede o microfone e cria
+   o `RTCPeerConnection`.
+3. Depois do `ACCEPTED`, quem ligou cria a oferta SDP; quem atendeu responde. Os candidatos
+   ICE que chegam antes da descrição remota ficam numa fila até ela chegar.
+4. Quando o WebRTC conecta, a barra `CallBar` mostra "Voz conectada" e o tempo de chamada.
+
+O estado da chamada fica na página `/chat`, e não dentro da conversa: assim dá para navegar
+por outras conversas sem desligar. Se a conexão STOMP cair e voltar, a chamada é encerrada
+no cliente, porque o servidor já a encerrou ao perder a sessão.
+
+Antes de conectar, o hook busca a lista de servidores STUN/TURN no backend
+(`GET /calls/ice-servers`). O STUN descobre o endereço público; quando a conexão direta é
+bloqueada (4G, firewalls), o áudio passa pelo TURN. Se a busca falhar, liga só com um STUN
+público de reserva e tenta buscar de novo na próxima chamada.
+
+> **Microfone exige contexto seguro.** O navegador só libera `getUserMedia` em HTTPS ou em
+> `localhost`. Em outro host sem HTTPS, o botão de ligar mostra o aviso e não liga.
+
+Para testar sozinho, abra a aplicação em `localhost:8080` com um usuário e em
+`127.0.0.1:8080` com outro: são origens diferentes, então cada uma guarda o próprio token.
+Use fone de ouvido para evitar microfonia.
+
+## Jogos
+
+O botão **🎮 Jogos** da barra lateral troca a área da conversa pela área de jogos (no
+celular, esconde a lista, como uma conversa aberta). O número no botão soma os desafios
+recebidos e as partidas em que é a vez do usuário. O ícone de controle no cabeçalho da
+conversa abre o mesmo modal de desafio, já limitado a quem está nela.
+
+O backend é a autoridade (ver [game](../backend/modules/game.md)): o front manda a jogada por
+REST e desenha o estado que volta. A resposta é aplicada na hora, e o evento em
+`/user/queue/games` atualiza o outro jogador e as outras abas; `upsertGame` (em
+`lib/games.ts`) descarta o que chegar com `updatedAt` mais antigo que o já mostrado.
+
+Cada jogo tem o próprio tabuleiro em `components/games/` (`TicTacToeBoard`,
+`CheckersBoard`, `ChessBoard`); o `GameView` escolhe pelo `type` e cuida do que é comum:
+jogadores, vez, aceitar, desistir, revanche e o motivo do fim (xeque, afogamento...). Damas e
+xadrez recebem do servidor a lista de jogadas legais: o tabuleiro só destaca e envia essas, sem
+repetir as regras. Quem joga de pretas vê o tabuleiro girado.
+
+- **Damas:** toca a peça e depois cada casa de parada; numa captura múltipla, uma casa por vez.
+- **Xadrez:** toca a peça e o destino; na promoção, aparece a escolha da peça. Abaixo do
+  tabuleiro fica a lista de lances em notação algébrica. As peças são SVG do conjunto
+  Chessnut (Apache 2.0), em `public/pieces/chessnut`.
+
+**Relógio e empate (xadrez e damas).** O modal de desafio pede o ritmo (10, 5 ou 3 minutos).
+Na partida, cada cartão de jogador mostra o relógio; o que está correndo fica claro e, nos
+últimos 20 segundos, vermelho e piscando, com décimos abaixo de 10 s. O tempo vem do servidor
+já calculado; `stampGame` marca quando a partida chegou (`receivedAt`) e `timeLeft` desconta o
+que passou desde então. Quando zera, quem encerra a partida é o servidor, e o resultado chega
+pelo evento. A proposta de empate aparece como uma faixa com aceitar e recusar para quem a
+recebe.
+
+**Jogos solo.** Campo minado e paciência rodam inteiros no navegador, com a lógica em
+`lib/minesweeper.ts` e `lib/solitaire.ts` (funções puras, sem React). Ao vencer, o tempo vai
+para `POST /games/solo/{jogo}/results`, e a resposta já traz o ranking atualizado e se foi
+recorde pessoal. No campo minado, o primeiro clique nunca acha mina; no celular, um botão
+alterna entre abrir casas e marcar bandeiras. Na paciência, as jogadas são por toque (carta,
+depois destino), com toque duplo para a fundação, desfazer e completar automaticamente.
 
 ## Leitura
 
@@ -144,7 +238,11 @@ daria 404.
 
 - **Sem testes automatizados de front** (o backend cobre a API). Um próximo passo natural
   seria Testing Library para os componentes e Playwright para o fluxo completo.
-- **Sem upload de arquivos, reações ou respostas** — seguem fora do escopo.
+- **Sem reações ou respostas** — seguem fora do escopo.
+- **Chamadas só individuais**; o TURN do deploy tem cota (ver
+  [deploy](../deploy.md#limitações)).
+- **Lint com erros antigos**: `npx eslint` acusa 3 erros que já existiam (uma ref atribuída
+  durante o render, um `any` e um `@ts-ignore`). O `npm run build` passa mesmo assim.
 - **Busca limitada**: a barra lateral filtra por nome, e a busca dentro da conversa só
   alcança as mensagens já carregadas — não há busca no servidor.
 - **"Excluir conta" no perfil é simulação**: o backend não tem rota de remoção de usuário.

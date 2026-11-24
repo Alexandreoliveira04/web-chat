@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/chats/{chatId}/messages")
 public class MessageController {
@@ -39,6 +41,11 @@ public class MessageController {
 			@RequestParam(defaultValue = "50") @Min(1) @Max(100) int size,
 			Authentication authentication) {
 		return messageService.findHistory(chatId, authentication.getName(), before, size);
+	}
+
+	@GetMapping("/shared")
+	public List<MessageResponse> findShared(@PathVariable Long chatId, Authentication authentication) {
+		return messageService.findShared(chatId, authentication.getName());
 	}
 
 	@PostMapping

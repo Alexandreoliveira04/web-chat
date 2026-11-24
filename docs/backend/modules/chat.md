@@ -2,7 +2,7 @@
 
 **Pacote:** `br.edu.webchat.chat`
 **Situação:** implementado — conversas individuais e em grupo, mensagens (envio, edição,
-exclusão), histórico, leitura por participante e tempo real
+exclusão), arquivos e links compartilhados, histórico, leitura por participante e tempo real
 
 Responsável pelas conversas, participantes, mensagens, histórico e comunicação em
 tempo real.
@@ -31,12 +31,14 @@ Dois tipos de conversa:
 - **`DIRECT`**: exatamente dois participantes, uma única por par (ver [`direct_key`](#por-que-direct_key));
 - **`GROUP`**: nome, dono e de 2 a 50 participantes.
 
-Cada mensagem pode ser editada ou apagada pelo autor. Envio de arquivos, respostas e reações
-seguem fora do escopo.
+Cada mensagem pode ser editada ou apagada pelo autor. Fotos, vídeos e documentos são
+enviados pelo módulo [storage](storage.md) e viram uma mensagem comum, cujo conteúdo é só a
+URL do arquivo; o frontend reconhece o tipo pela extensão. Respostas e reações seguem fora do
+escopo. Chamadas de voz ficam no módulo [call](call.md).
 
 ## Modelo de dados
 
-### `chats` — `V4`, `V6__add_direct_key_to_chats.sql` e `V9__add_groups_to_chats.sql`
+### `chats` — `V4`, `V6__add_direct_key_to_chats.sql`, `V9__add_groups_to_chats.sql` e `V12__add_avatar_to_chats.sql`
 
 | Coluna | Tipo | Observações |
 | ------ | ---- | ----------- |
@@ -44,6 +46,7 @@ seguem fora do escopo.
 | `type` | `VARCHAR(20)` | `DIRECT` ou `GROUP` |
 | `name` | `VARCHAR(100)` | nome do grupo; nulo em conversa individual |
 | `owner_id` | `BIGINT` | FK → `users.id`; dono do grupo, nulo em conversa individual |
+| `avatar_url` | `VARCHAR(500)` | foto do grupo no Cloud Storage; só grupo pode ter (`CHECK`) |
 | `direct_key` | `VARCHAR(40)` | par de usuários, menor id primeiro (ex.: `3:4`); **`UNIQUE`**, nulo em grupo |
 | `created_at` | `TIMESTAMPTZ` | preenchido no `@PrePersist` |
 | `updated_at` | `TIMESTAMPTZ` | última atividade: atualizado a cada mensagem enviada; ordena a listagem |
@@ -139,10 +142,12 @@ participante como arquivar ou silenciar (fora do escopo),
 | `POST` | `/api/v1/chats/groups` | `201` + `Location` | `400`, `404` |
 | `GET` | `/api/v1/chats/{chatId}` | `200` | `403`, `404` |
 | `PATCH` | `/api/v1/chats/{chatId}` | `200` | `400`, `403`, `404` |
+| `POST` | `/api/v1/chats/{chatId}/avatar` | `200` | `400`, `403`, `404` |
 | `POST` | `/api/v1/chats/{chatId}/participants` | `200` | `400`, `403`, `404`, `409` |
 | `DELETE` | `/api/v1/chats/{chatId}/participants/{userId}` | `200` | `400`, `403`, `404` |
 | `DELETE` | `/api/v1/chats/{chatId}/participants/me` | `204` | `400`, `403`, `404` |
 | `GET` | `/api/v1/chats/{chatId}/messages?before=&size=` | `200` | `400`, `403`, `404` |
+| `GET` | `/api/v1/chats/{chatId}/messages/shared` | `200` | `403`, `404` |
 | `POST` | `/api/v1/chats/{chatId}/messages` | `201` | `400`, `403`, `404` |
 | `PATCH` | `/api/v1/chats/{chatId}/messages/{messageId}` | `200` | `400`, `403`, `404`, `409` |
 | `DELETE` | `/api/v1/chats/{chatId}/messages/{messageId}` | `200` | `403`, `404` |
@@ -198,6 +203,7 @@ Resposta `201` com o mesmo `ChatResponse`, agora com `type: "GROUP"`, `name` e `
 | -------- | ---- | --------- |
 | Criar | `POST /chats/groups` | qualquer autenticado (vira o dono) |
 | Renomear | `PATCH /chats/{id}` com `{ "name": "..." }` | só o dono |
+| Trocar a foto | `POST /chats/{id}/avatar` (`multipart/form-data`, campo `file`) | só o dono |
 | Adicionar participante | `POST /chats/{id}/participants` com `{ "userId": 4 }` | só o dono |
 | Remover participante | `DELETE /chats/{id}/participants/{userId}` | só o dono |
 | Sair | `DELETE /chats/{id}/participants/me` | qualquer participante |
@@ -208,6 +214,9 @@ Regras:
   `participantIds` é ignorado, mas a lista precisa sobrar pelo menos uma outra pessoa (400);
 - nome obrigatório, até 100 caracteres, com espaços das pontas removidos;
 - de 2 a 50 participantes; adicionar além disso é 400, e adicionar quem já está é **409**;
+- a foto precisa ser uma imagem (400) e só existe em grupo (400 em conversa individual, que
+  usa a foto do contato); vai para o Cloud Storage, e os participantes recebem `UPDATED` em
+  `/user/queue/chats`;
 - o dono não pode ser removido (400) — ele precisa **sair**;
 - ao sair, quem for removido perde o acesso ao histórico (403 nas próximas chamadas);
 - **se o dono sai, a posse passa ao participante mais antigo** (menor id); se o último
@@ -385,6 +394,21 @@ existe campo de leitura na mensagem:
 > continua sem efeito colateral, o que permite, por exemplo, pré-carregar mensagens sem
 > marcá-las como lidas.
 
+### Arquivos e links compartilhados
+
+```http
+GET /api/v1/chats/{chatId}/messages/shared
+```
+
+Devolve as mensagens da conversa que contêm `http://` ou `https://` (arquivos enviados e
+links), não apagadas, da mais recente para a mais antiga, até 500. É o que alimenta o painel
+lateral com as abas Mídia, Docs e Links.
+
+O histórico é paginado de 50 em 50, então o painel não pode depender só das mensagens já
+carregadas no chat: sem este endpoint, uma foto antiga só apareceria depois de o usuário
+rolar a conversa até ela. O servidor só filtra quem tem URL; separar imagem, vídeo, documento
+e link fica com o frontend, que já faz essa classificação para desenhar as mensagens.
+
 ## Regras de negócio
 
 | Situação | Resultado |
@@ -465,22 +489,24 @@ reconexão — está em [frontend/arquitetura](../../frontend/architecture.md).
 
 | Classe | Tipo | Cobre |
 | ------ | ---- | ----- |
-| `ChatServiceTest` | unitário (Mockito) | criar, reaproveitar, chave em qualquer ordem, corrida, consigo mesmo (400), participante inexistente (404), listar com `lastMessage`/`unreadCount` em lote, lista vazia não consulta mensagens, consultar, não participante (403) |
-| `MessageServiceTest` | unitário (Mockito) | remetente = autenticado, `strip` do conteúdo, envio atualiza a conversa, 403/404, histórico em ordem cronológica, busca de `size + 1`, `hasMore`/`nextBefore`, marcar como lida, eventos publicados para os dois participantes, nenhum evento em envio recusado ou leitura sem pendências |
+| `ChatServiceTest` | unitário (Mockito) | foto do grupo só pelo dono, só em grupo e com evento `UPDATED`; criar, reaproveitar, chave em qualquer ordem, corrida, consigo mesmo (400), participante inexistente (404), listar com `lastMessage`/`unreadCount` em lote, lista vazia não consulta mensagens, consultar, não participante (403) |
+| `MessageServiceTest` | unitário (Mockito) | remetente = autenticado, `strip` do conteúdo, envio atualiza a conversa, 403/404, histórico em ordem cronológica, busca de `size + 1`, `hasMore`/`nextBefore`, marcar como lida, eventos publicados para os dois participantes, nenhum evento em envio recusado ou leitura sem pendências, conteúdo compartilhado só para participante e com limite |
 | `StompAuthInterceptorTest` | unitário | `CONNECT` com token válido autentica; sem token, token inválido, sem `Bearer` ou usuário removido é recusado; `SUBSCRIBE` e `SEND` só nos destinos permitidos e com sessão autenticada |
 | `PresenceServiceTest` | unitário (Mockito) | primeira sessão → `ONLINE`; segunda aba não repete; fechar uma aba não deixa `OFFLINE`; desconexão repetida/desconhecida ignorada; reset na inicialização |
 | `ChatControllerTest` | `@WebMvcTest` | 201 + `Location` × 200, validação, 400/403/404, formato com `lastMessage` e `unreadCount` |
 | `MessageControllerTest` | `@WebMvcTest` | 201, conteúdo em branco/longo (400), 403, `size` padrão 50, `size`/`before` inválidos (400 com `fields`), `PATCH read` |
 | `ChatRepositoryTest` | `@DataJpaTest` (H2) | persistência e `direct_key`, busca por chave, `UNIQUE`, listagem e ordenação |
-| `MessageRepositoryTest` | `@DataJpaTest` (H2) | persistência, histórico por cursor, última mensagem por conversa, não lidas só dos outros, marcador de um participante não afeta o outro |
+| `MessageRepositoryTest` | `@DataJpaTest` (H2) | persistência, histórico por cursor, última mensagem por conversa, não lidas só dos outros, marcador de um participante não afeta o outro, conteúdo compartilhado só com URL, não apagado e da própria conversa |
 | `ChatIntegrationTest` | `@SpringBootTest` | cadeia real das conversas: 401, criar → reaproveitar → listar, 403, 404, 400 |
 | `EditAndDeleteMessageIntegrationTest` | `@SpringBootTest` | editar marca `editedAt` e chega aos outros, apagar esvazia o conteúdo e mantém a linha, apagar é idempotente, editar apagada é 409, só o autor edita/apaga (403), mensagem de outra conversa é 404, validação do conteúdo, mensagem apagada segue como última da conversa |
 | `GroupIntegrationTest` | `@SpringBootTest` | criar grupo (dono incluído, visível para todos e 403 para quem está fora), leitura independente por participante e ✓✓ só quando todos leem, administração restrita ao dono, 409 ao repetir participante, dono não é removido, sair transfere a posse, grupo vazio é apagado com as mensagens, operações de grupo recusadas em conversa individual, validações |
 | `MessageIntegrationTest` | `@SpringBootTest` | cadeia real: 401, fluxo envio → listagem com não lidas → histórico → leitura → ✓✓, leitura de um participante não zera a do outro, cursor sem repetição com mensagem nova no meio, conversa sobe na lista, 403 nos 3 endpoints, 400/404 |
-| `RealtimeIntegrationTest` | `@SpringBootTest(RANDOM_PORT)` + cliente STOMP real | conexão sem token/inválida recusada; `POST` REST entrega aos dois participantes e não a terceiros; envio por STOMP persiste e entrega; erro 403/400 só para quem enviou e nada é gravado; recibo de leitura; presença `ONLINE`/`OFFLINE` e status no banco |
+| `RealtimeIntegrationTest` | `@SpringBootTest(RANDOM_PORT)` + cliente STOMP real | conexão sem token/inválida recusada; `POST` REST entrega aos dois participantes e não a terceiros; envio por STOMP persiste e entrega; erro 403/400 só para quem enviou e nada é gravado; recibo de leitura; presença `ONLINE`/`OFFLINE` e status no banco; cadastro novo e troca de nome chegam aos conectados |
 
-`RealtimeIntegrationTest` espera cada assinatura aparecer no `SimpUserRegistry` antes de
-disparar eventos — assinar é assíncrono, e sem essa espera o teste seria intermitente.
+`RealtimeIntegrationTest` estende `StompIntegrationTest` (pacote de teste `support`), a base
+comum dos testes de tempo real, que sobe o servidor, conecta clientes STOMP autenticados e
+espera cada assinatura aparecer no `SimpUserRegistry` antes de disparar eventos — assinar é
+assíncrono, e sem essa espera o teste seria intermitente.
 
 As classes de integração limpam `messages` → `chats` → `users` também no `@AfterEach`: os
 testes compartilham o mesmo H2 em memória, e registros esquecidos fariam as FKs quebrarem a
@@ -532,7 +558,8 @@ do REST. Token ausente, inválido, expirado ou de usuário removido → frame `E
 
 O interceptor também restringe os frames seguintes:
 
-- `SUBSCRIBE` só nos quatro destinos da tabela abaixo; qualquer outro → `ERROR`
+- `SUBSCRIBE` só nos destinos da tabela abaixo e nos das [chamadas](call.md#websocket);
+  qualquer outro → `ERROR`
   (impede, por exemplo, assinar diretamente a fila interna de outra sessão);
 - `SEND` só para destinos `/app/...`.
 
@@ -547,6 +574,8 @@ O interceptor também restringe os frames seguintes:
 | `SUBSCRIBE` | `/user/queue/errors` | `ApiError` | só a sessão que fez o `SEND` que falhou |
 | `SUBSCRIBE` | `/user/queue/chats` | `ChatEventResponse` | participantes afetados por mudanças na conversa |
 | `SUBSCRIBE` | `/topic/presence` | `PresenceResponse` | todos os conectados |
+| `SUBSCRIBE` | `/topic/profiles` | `ProfileResponse` | todos os conectados, quando alguém troca nome ou foto (ver [user](user.md#mudanças-de-perfil-em-tempo-real)) |
+| `SUBSCRIBE` | `/topic/users` | `UserResponse` | todos os conectados, quando alguém se cadastra |
 
 ```json
 // /user/queue/messages
@@ -568,6 +597,9 @@ O interceptor também restringe os frames seguintes:
 
 // /topic/presence
 { "userId": 4, "status": "OFFLINE" }
+
+// /topic/profiles
+{ "id": 4, "name": "Bia", "avatarUrl": "http://localhost:4443/storage/v1/b/webchat-files/o/...%2Feu.png?alt=media" }
 ```
 
 > **Decisão: destinos do usuário em vez de um tópico por conversa.** Com
@@ -584,7 +616,7 @@ Mudanças em grupo avisam quem é afetado em `/user/queue/chats`:
 | Evento | Quando | Quem recebe |
 | ------ | ------ | ----------- |
 | `CREATED` | grupo criado, ou você foi adicionado a um | participantes do grupo / quem entrou |
-| `UPDATED` | grupo renomeado, participante entrou ou saiu | quem continua no grupo |
+| `UPDATED` | grupo renomeado, foto trocada, participante entrou ou saiu | quem continua no grupo |
 | `REMOVED` | você foi removido ou saiu do grupo | só quem saiu |
 
 O payload traz apenas o tipo e o `chatId`: `unreadCount` e `lastMessage` são diferentes para
@@ -599,16 +631,9 @@ com `@Valid` e chama `MessageService.send` com o usuário da sessão — as mesm
 responde diretamente: a mensagem chega a quem enviou pelo mesmo `/user/queue/messages` dos
 demais.
 
-Falhas viram `ApiError` em `/user/queue/errors` (`@SendToUser(broadcast = false)`, só a sessão
-que enviou):
-
-| Exceção | `status` |
-| ------- | -------- |
-| validação do payload | 400, com `fields` |
-| `BadRequestException` | 400 |
-| `ForbiddenException` | 403 |
-| `NotFoundException` | 404 |
-| qualquer outra | 500, mensagem genérica, stack trace no log |
+Falhas viram `ApiError` em `/user/queue/errors`, só para a sessão que enviou. O tratamento é
+comum a todos os destinos STOMP e fica no `WebSocketExceptionHandler` de
+[shared](shared.md#erros-no-websocket).
 
 ### Notificação após o commit
 
@@ -619,6 +644,9 @@ que enviou):
 
 Assim, uma mensagem cujo `INSERT` sofra rollback nunca é anunciada, e o módulo de serviço
 continua testável sem broker. `MessagesReadEvent` só é publicado quando `markedAsRead > 0`.
+
+O mesmo broadcaster também envia os eventos do módulo user: `ProfileChangedEvent` para
+`/topic/profiles` e `UserCreatedEvent` para `/topic/users`.
 
 ### Presença (`ONLINE` / `OFFLINE`)
 

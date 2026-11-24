@@ -73,7 +73,7 @@ export default function NewGroupModal({me, users, onClose, onCreate}: Props) {
                                 checked={selecionados.includes(user.id)}
                                 onChange={() => alternar(user.id)}
                             />
-                            <Avatar name={user.name} online={user.status === "ONLINE"} size="sm"/>
+                            <Avatar name={user.name} url={user.avatarUrl} online={user.status === "ONLINE"} size="sm"/>
                             <span className="text-sm">{user.name}</span>
                         </label>
                     ))}

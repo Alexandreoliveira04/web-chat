@@ -7,9 +7,26 @@ import Sidebar from "@/components/Sidebar";
 import ChatWindow from "@/components/ChatWindow";
 import NewGroupModal from "@/components/NewGroupModal";
 import GroupSettingsModal from "@/components/GroupSettingsModal";
-import { authApi, chatsApi, messagesApi, tokenStorage, usersApi } from "@/lib/api";
+import IncomingCall from "@/components/IncomingCall";
+import CallBar from "@/components/CallBar";
+import GamesPanel, { type GameActions } from "@/components/games/GamesPanel";
+import ChallengeModal from "@/components/games/ChallengeModal";
+import GameInvite from "@/components/games/GameInvite";
+import { authApi, chatsApi, gamesApi, messagesApi, tokenStorage, usersApi } from "@/lib/api";
 import { connectRealtime, sendOverWebSocket } from "@/lib/realtime";
-import type { Chat, Message, User } from "@/lib/types";
+import { otherParticipant } from "@/lib/format";
+import { useVoiceCall } from "@/lib/useVoiceCall";
+import { isInviteForMe, opponentOf, pendingGamesCount, stampGame, timeControlMinutes, upsertGame } from "@/lib/games";
+import type { Chat, Game, GameType, Message, Participant, User } from "@/lib/types";
+
+const MINUTOS_ATE_DESCONECTAR = 5;
+
+/** Desafio sendo montado no modal: de onde saiu e quem pode ser desafiado. */
+interface DesafioEmAndamento {
+  candidatos: (User | Participant)[];
+  chatId: number | null;
+  tipo?: string;
+}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -26,19 +43,54 @@ export default function ChatPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarNovoGrupo, setMostrarNovoGrupo] = useState(false);
   const [mostrarParticipantes, setMostrarParticipantes] = useState(false);
+  const [games, setGames] = useState<Game[]>([]);
+  const [mostrarJogos, setMostrarJogos] = useState(false);
+  const [jogoAbertoId, setJogoAbertoId] = useState<number | null>(null);
+  const [desafio, setDesafio] = useState<DesafioEmAndamento | null>(null);
+  const [convitesDispensados, setConvitesDispensados] = useState<number[]>([]);
 
   const clientRef = useRef<Client | null>(null);
   const meRef = useRef<User | null>(null);
   const activeChatIdRef = useRef<number | null>(null);
   activeChatIdRef.current = activeChatId;
+  const mostrarJogosRef = useRef(false);
+  mostrarJogosRef.current = mostrarJogos;
 
   const activeChat = chats.find((chat) => chat.id === activeChatId) ?? null;
+
+  const chamada = useVoiceCall({
+    clientRef,
+    meId: me?.id ?? null,
+    nameOf: (userId) => users.find((user) => user.id === userId)?.name ?? "Contato",
+    onNotice: setErro,
+  });
+  const chamadaRef = useRef(chamada);
+  useEffect(() => {
+    chamadaRef.current = chamada;
+  });
+  const chatDaChamada = chats.find((chat) => chat.id === chamada.state.chatId) ?? null;
+  const contatoDaChamada =
+    chatDaChamada?.participants.find((participante) => participante.id === chamada.state.peerId) ??
+    users.find((user) => user.id === chamada.state.peerId);
 
   const carregarConversas = useCallback(async () => {
     const [listaUsuarios, listaChats] = await Promise.all([usersApi.list(), chatsApi.list()]);
     setUsers(listaUsuarios);
     setChats(listaChats);
     return listaChats;
+  }, []);
+
+  const carregarJogos = useCallback(async () => {
+    try {
+      setGames((await gamesApi.list()).map(stampGame));
+    } catch {
+      // sem a lista, a área de jogos só começa vazia; os eventos em tempo real continuam chegando
+    }
+  }, []);
+
+  // Precisa ser estável: a Sidebar refaz a busca sempre que esta função muda.
+  const buscarConversas = useCallback((termo: string) => {
+    chatsApi.list(termo).then(setChats).catch(console.error);
   }, []);
 
   const marcarComoLida = useCallback(async (chatId: number) => {
@@ -52,6 +104,11 @@ export default function ChatPage() {
 
   const abrirConversa = useCallback(
     async (chat: Chat) => {
+      if (activeChatIdRef.current === null && !mostrarJogosRef.current) {
+        window.history.pushState({ conversaAberta: true }, "");
+      }
+      setMostrarJogos(false);
+      setJogoAbertoId(null);
       setActiveChatId(chat.id);
       activeChatIdRef.current = chat.id;
       setCarregando(true);
@@ -108,6 +165,7 @@ export default function ChatPage() {
         meRef.current = usuario;
         setMe(usuario);
         await carregarConversas();
+        carregarJogos();
       } catch (falha) {
         setErro(falha instanceof Error ? falha.message : "Não foi possível carregar o chat");
         return;
@@ -117,7 +175,9 @@ export default function ChatPage() {
         onConnect: (reconectado) => {
           setConectado(true);
           if (reconectado) {
+            chamadaRef.current.reset();
             carregarConversas();
+            carregarJogos();
             const atual = activeChatIdRef.current;
             if (atual) {
               messagesApi.history(atual).then((historico) => {
@@ -205,6 +265,23 @@ export default function ChatPage() {
             })),
           );
         },
+        onProfile: (perfil) => {
+          const atualizar = <T extends { id: number; name: string; avatarUrl?: string }>(pessoa: T): T =>
+            pessoa.id === perfil.id ? { ...pessoa, name: perfil.name, avatarUrl: perfil.avatarUrl ?? undefined } : pessoa;
+
+          setUsers((atual) => atual.map(atualizar));
+          setChats((atual) => atual.map((chat) => ({ ...chat, participants: chat.participants.map(atualizar) })));
+          setMe((atual) => (atual ? atualizar(atual) : atual));
+        },
+        onUserCreated: (novo) => {
+          setUsers((atual) => (atual.some((user) => user.id === novo.id) ? atual : [...atual, novo]));
+        },
+        onCallEvent: (evento) => chamadaRef.current.handleEvent(evento),
+        onCallSignal: (sinal) => chamadaRef.current.handleSignal(sinal),
+        onGame: (game) => {
+          const recebida = stampGame(game);
+          setGames((atual) => upsertGame(atual, recebida));
+        },
         onError: (mensagem) => setErro(mensagem),
       });
     })();
@@ -213,7 +290,7 @@ export default function ChatPage() {
       ativo = false;
       clientRef.current?.deactivate();
     };
-  }, [router, carregarConversas, recarregarConversa, marcarComoLida]);
+  }, [router, carregarConversas, carregarJogos, recarregarConversa, marcarComoLida]);
 
   useEffect(() => {
     function aoVoltar() {
@@ -228,17 +305,123 @@ export default function ChatPage() {
     return () => document.removeEventListener("visibilitychange", aoVoltar);
   }, [chats, marcarComoLida]);
 
+  // Aba em segundo plano por 5 minutos: desconecta o WebSocket para o servidor poder
+  // desligar quando ninguém está usando (no Cloud Run, conexão aberta conta como uso).
+  // Ao voltar, reconecta; o onConnect de reconexão recarrega conversas e histórico.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    function aoMudarVisibilidade() {
+      const client = clientRef.current;
+      if (!client) return;
+
+      if (document.hidden) {
+        timer = setTimeout(() => {
+          if (document.hidden && chamadaRef.current.state.status === "idle") {
+            client.deactivate();
+            setConectado(false);
+          }
+        }, MINUTOS_ATE_DESCONECTAR * 60_000);
+        return;
+      }
+
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (!client.active) client.activate();
+    }
+
+    document.addEventListener("visibilitychange", aoMudarVisibilidade);
+    return () => {
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", aoMudarVisibilidade);
+    };
+  }, []);
+
+  // O "voltar" do navegador (e o do Android) fecha a conversa em vez de sair do app.
+  useEffect(() => {
+    function aoVoltarNoHistorico() {
+      setActiveChatId(null);
+      setMessages([]);
+      setMostrarJogos(false);
+      setJogoAbertoId(null);
+    }
+
+    window.addEventListener("popstate", aoVoltarNoHistorico);
+    return () => window.removeEventListener("popstate", aoVoltarNoHistorico);
+  }, []);
+
   useEffect(() => {
     function onEscKeyDown(e: KeyboardEvent) {
       // Ignorar se houver modais abertos, ou se o foco estiver num input (opcional)
-      if (e.key === "Escape" && !mostrarParticipantes && !mostrarNovoGrupo) {
-        setActiveChatId(null);
-        setMessages([]);
+      if (e.key === "Escape" && !mostrarParticipantes && !mostrarNovoGrupo && !desafio) {
+        voltarParaLista();
       }
     }
     window.addEventListener("keydown", onEscKeyDown);
     return () => window.removeEventListener("keydown", onEscKeyDown);
-  }, [mostrarParticipantes, mostrarNovoGrupo]);
+  }, [mostrarParticipantes, mostrarNovoGrupo, desafio]);
+
+  /** Fecha a conversa ou os jogos; se empilharam um estado no histórico, desfaz pelo próprio histórico. */
+  function voltarParaLista() {
+    if (window.history.state?.conversaAberta) {
+      window.history.back();
+      return;
+    }
+    setActiveChatId(null);
+    setMessages([]);
+    setMostrarJogos(false);
+    setJogoAbertoId(null);
+  }
+
+  /** Abre a área de jogos no lugar da conversa; com `gameId`, já abre a partida. */
+  function abrirJogos(gameId: number | null) {
+    if (activeChatIdRef.current === null && !mostrarJogosRef.current) {
+      window.history.pushState({ conversaAberta: true }, "");
+    }
+    setActiveChatId(null);
+    activeChatIdRef.current = null;
+    setMessages([]);
+    setMostrarJogos(true);
+    setJogoAbertoId(gameId);
+  }
+
+  async function abrirConversaPorId(chatId: number) {
+    try {
+      const chat = chats.find((item) => item.id === chatId) ?? (await chatsApi.byId(chatId));
+      await abrirConversa(chat);
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : "Não foi possível abrir a conversa");
+    }
+  }
+
+  /** Executa a ação na partida e já aplica a resposta, sem esperar o evento em tempo real. */
+  async function naPartida(acao: () => Promise<Game>) {
+    try {
+      const game = stampGame(await acao());
+      setGames((atual) => upsertGame(atual, game));
+      return game;
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : "Não foi possível concluir a jogada");
+      throw falha;
+    }
+  }
+
+  async function desafiar(tipo: GameType, adversarioId: number, chatId: number | null, minutos: number | null) {
+    const game = await naPartida(() => gamesApi.challenge(tipo, adversarioId, chatId, minutos));
+    abrirJogos(game.id);
+  }
+
+  const acoesDeJogo: GameActions = {
+    move: async (game, move) => void (await naPartida(() => gamesApi.move(game.id, move))),
+    accept: async (game) => void (await naPartida(() => gamesApi.accept(game.id))),
+    decline: async (game) => void (await naPartida(() => gamesApi.decline(game.id))),
+    cancel: async (game) => void (await naPartida(() => gamesApi.cancel(game.id))),
+    resign: async (game) => void (await naPartida(() => gamesApi.resign(game.id))),
+    offerDraw: async (game) => void (await naPartida(() => gamesApi.offerDraw(game.id))),
+    acceptDraw: async (game) => void (await naPartida(() => gamesApi.acceptDraw(game.id))),
+    declineDraw: async (game) => void (await naPartida(() => gamesApi.declineDraw(game.id))),
+    rematch: (game) => desafiar(game.type, opponentOf(game, me!.id).id, game.chatId, timeControlMinutes(game)),
+  };
 
   async function iniciarConversaDireta(user: User) {
     try {
@@ -294,6 +477,26 @@ export default function ChatPage() {
       throw falha;
     }
   }
+
+  const conviteVisivel = me
+    ? games.find(
+        (game) =>
+          isInviteForMe(game, me.id) &&
+          !convitesDispensados.includes(game.id) &&
+          !(mostrarJogos && jogoAbertoId === game.id),
+      )
+    : undefined;
+
+  const barraDaChamada =
+    chamada.state.status !== "idle" && chamada.state.status !== "incoming" ? (
+      <CallBar
+        call={chamada.state}
+        peer={contatoDaChamada}
+        onOpenChat={() => chatDaChamada && abrirConversa(chatDaChamada)}
+        onToggleMute={chamada.toggleMute}
+        onHangUp={chamada.hangUp}
+      />
+    ) : null;
 
   if (!me) {
     return (
@@ -367,8 +570,9 @@ export default function ChatPage() {
 </svg>`.trim());
 
   return (
-    <main className="flex h-full">
+    <main className="flex h-dvh">
       <Sidebar
+        escondidaNoCelular={Boolean(activeChat) || mostrarJogos}
         me={me}
         chats={chats}
         users={users}
@@ -377,17 +581,25 @@ export default function ChatPage() {
         onSelectChat={abrirConversa}
         onStartDirect={iniciarConversaDireta}
         onNewGroup={() => setMostrarNovoGrupo(true)}
+        onOpenGames={() => abrirJogos(null)}
+        pendingGames={pendingGamesCount(games, me.id)}
+        gamesOpen={mostrarJogos}
         onLogout={() => {
+          chamada.hangUp();
           clientRef.current?.deactivate();
           authApi.logout();
           router.replace("/login");
         }}
         onUpdateMe={(updated) => setMe(updated)}
-        onSearch={(term) => chatsApi.list(term).then(setChats).catch(console.error)}
+        onSearch={buscarConversas}
+        footer={barraDaChamada}
       />
 
       {activeChat ? (
-        <ChatWindow
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* No celular a lista fica escondida com a conversa aberta; a barra vai para o topo. */}
+          {barraDaChamada && <div className="md:hidden">{barraDaChamada}</div>}
+          <ChatWindow
           chat={activeChat}
           me={me}
           messages={messages}
@@ -398,10 +610,40 @@ export default function ChatPage() {
           onEdit={(messageId, content) => executar(() => messagesApi.edit(activeChat.id, messageId, content))}
           onDelete={(messageId) => executar(() => messagesApi.remove(activeChat.id, messageId))}
           onOpenSettings={() => setMostrarParticipantes(true)}
+          emChamada={chamada.state.status !== "idle"}
+          onStartCall={() => {
+            const contato = otherParticipant(activeChat, me.id);
+            if (contato) chamada.start(activeChat.id, contato.id);
+          }}
+          onChallenge={() =>
+            setDesafio({
+              candidatos: activeChat.participants.filter((participante) => participante.id !== me.id),
+              chatId: activeChat.id,
+            })
+          }
+          onBack={voltarParaLista}
         />
+        </div>
+      ) : mostrarJogos ? (
+        <div className="flex min-w-0 flex-1 flex-col">
+          {barraDaChamada && <div className="md:hidden">{barraDaChamada}</div>}
+          <GamesPanel
+            me={me}
+            games={games}
+            openGameId={jogoAbertoId}
+            actions={acoesDeJogo}
+            onOpenGame={setJogoAbertoId}
+            onNewChallenge={(tipo) =>
+              setDesafio({ candidatos: users.filter((user) => user.id !== me.id), chatId: null, tipo })
+            }
+            onOpenChat={abrirConversaPorId}
+            onBack={voltarParaLista}
+            onError={setErro}
+          />
+        </div>
       ) : (
         <section 
-          className="flex flex-1 flex-col items-center justify-center border-l border-slate-800 bg-slate-950 text-center"
+          className="hidden flex-1 flex-col items-center justify-center border-l border-slate-800 bg-slate-950 text-center md:flex"
           style={{ backgroundImage: `url("data:image/svg+xml,${bgStars}")`, backgroundSize: '300px 300px' }}
         >
           <div className="mb-4 flex items-center justify-center">
@@ -434,6 +676,27 @@ export default function ChatPage() {
         </div>
       )}
 
+      {desafio && (
+        <ChallengeModal
+          candidates={desafio.candidatos}
+          initialType={desafio.tipo}
+          onClose={() => setDesafio(null)}
+          onChallenge={(tipo, adversarioId, minutos) => desafiar(tipo, adversarioId, desafio.chatId, minutos)}
+        />
+      )}
+
+      {conviteVisivel && (
+        <GameInvite
+          game={conviteVisivel}
+          onOpen={() => abrirJogos(conviteVisivel.id)}
+          onDismiss={() => setConvitesDispensados((atual) => [...atual, conviteVisivel.id])}
+        />
+      )}
+
+      {chamada.state.status === "incoming" && (
+        <IncomingCall caller={contatoDaChamada} onAccept={chamada.accept} onDecline={chamada.hangUp} />
+      )}
+
       {mostrarNovoGrupo && (
         <NewGroupModal
           me={me}
@@ -454,6 +717,7 @@ export default function ChatPage() {
           users={users}
           onClose={() => setMostrarParticipantes(false)}
           onRename={(nome) => executar(() => chatsApi.rename(activeChat.id, nome)).then(() => recarregarConversa(activeChat.id))}
+          onChangeAvatar={(foto) => chatsApi.uploadAvatar(activeChat.id, foto).then(() => recarregarConversa(activeChat.id))}
           onAdd={(userId) => executar(() => chatsApi.addParticipant(activeChat.id, userId)).then(() => recarregarConversa(activeChat.id))}
           onRemove={(userId) =>
             executar(() => chatsApi.removeParticipant(activeChat.id, userId)).then(() => recarregarConversa(activeChat.id))

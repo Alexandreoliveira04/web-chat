@@ -18,8 +18,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.List;
@@ -72,6 +74,12 @@ public class ChatController {
 	public ChatResponse rename(@PathVariable Long chatId, @Valid @RequestBody RenameChatRequest request,
 			Authentication authentication) {
 		return chatService.rename(chatId, authentication.getName(), request);
+	}
+
+	@PostMapping("/{chatId}/avatar")
+	public ChatResponse changeAvatar(@PathVariable Long chatId, @RequestParam("file") MultipartFile file,
+			Authentication authentication) {
+		return chatService.changeAvatar(chatId, authentication.getName(), file);
 	}
 
 	@PostMapping("/{chatId}/participants")

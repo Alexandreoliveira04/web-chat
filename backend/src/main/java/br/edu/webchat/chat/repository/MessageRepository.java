@@ -34,6 +34,15 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 			""")
 	List<Message> findLastMessagesOfChats(@Param("chatIds") Collection<Long> chatIds);
 
+	/** Mensagens com arquivo ou link (o arquivo enviado vira uma URL no conteudo). */
+	@Query("""
+			select m from Message m
+			where m.chat.id = :chatId and m.deletedAt is null
+				and (m.content like '%http://%' or m.content like '%https://%')
+			order by m.id desc
+			""")
+	List<Message> findSharedContent(@Param("chatId") Long chatId, Pageable pageable);
+
 	@Query("select max(m.id) from Message m where m.chat.id = :chatId")
 	Long findLastMessageId(@Param("chatId") Long chatId);
 

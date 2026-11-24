@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { formatTime } from "@/lib/format";
+import { attachmentOf } from "@/lib/attachments";
 import type { Chat, Message, Participant } from "@/lib/types";
 
 import Avatar from "./Avatar";
+import DocumentCard from "./DocumentCard";
 
 interface Props {
   message: Message;
@@ -21,8 +23,7 @@ export default function MessageItem({ message, chat, meId, autor, onEdit, onDele
 
   const minha = message.senderId === meId;
   const apagada = Boolean(message.deletedAt);
-  const isImage = Boolean(!apagada && message.content.match(/^http.*?\.(jpg|jpeg|png|gif|webp)(?:\?.*)?$/i));
-  const isVideo = Boolean(!apagada && message.content.match(/^http.*?\.(mp4|webm|ogg|mov)(?:\?.*)?$/i));
+  const anexo = apagada ? null : attachmentOf(message.content);
   const lida = chat.lastReadByOthersMessageId !== null && chat.lastReadByOthersMessageId >= message.id;
 
   async function salvar() {
@@ -40,7 +41,7 @@ export default function MessageItem({ message, chat, meId, autor, onEdit, onDele
     <div className={`group flex gap-2 ${minha ? "justify-end" : "justify-start"} items-end`}>
       {!minha && autor && (
         <div className="mb-1 hidden sm:block">
-          <Avatar name={autor.name} online={autor.status === "ONLINE"} size="sm" />
+          <Avatar name={autor.name} url={autor.avatarUrl} online={autor.status === "ONLINE"} size="sm" />
         </div>
       )}
       <div
@@ -82,15 +83,17 @@ export default function MessageItem({ message, chat, meId, autor, onEdit, onDele
           <div className="whitespace-pre-wrap break-words text-sm">
             {apagada 
               ? "mensagem apagada" 
-              : isImage 
+              : anexo?.kind === "image"
                 ? (
-                  <img src={message.content} alt="Anexo" className="mt-1 max-w-full rounded-lg max-h-64 object-contain bg-black/20" />
+                  <img src={anexo.url} alt={anexo.name} className="mt-1 max-w-full rounded-lg max-h-64 object-contain bg-black/20" />
                 )
-                : isVideo
+                : anexo?.kind === "video"
                   ? (
-                    <video src={message.content} controls className="mt-1 max-w-full rounded-lg max-h-64 bg-black/20" />
+                    <video src={anexo.url} controls className="mt-1 max-w-full rounded-lg max-h-64 bg-black/20" />
                   )
-                  : message.content.split(/(\p{Extended_Pictographic})/gu).map((part, index) => {
+                  : anexo?.kind === "document"
+                    ? <DocumentCard attachment={anexo} />
+                    : message.content.split(/(\p{Extended_Pictographic})/gu).map((part, index) => {
                       if (/\p{Extended_Pictographic}/u.test(part)) {
                         return <span key={index} className="emoji-icon">{part}</span>;
                       }
@@ -106,7 +109,7 @@ export default function MessageItem({ message, chat, meId, autor, onEdit, onDele
           {minha && !apagada && <span title={lida ? "Lida" : "Enviada"}>{lida ? "✓✓" : "✓"}</span>}
           {minha && !apagada && !editando && (
             <span className="hidden gap-2 group-hover:flex">
-              {!(isImage || isVideo) && (
+              {!anexo && (
                 <button type="button" className="hover:text-slate-200" onClick={() => setEditando(true)}>
                   editar
                 </button>

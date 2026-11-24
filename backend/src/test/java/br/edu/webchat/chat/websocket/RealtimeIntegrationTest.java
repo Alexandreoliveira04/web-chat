@@ -1,95 +1,41 @@
 package br.edu.webchat.chat.websocket;
 
-import br.edu.webchat.auth.jwt.JwtService;
 import br.edu.webchat.chat.dto.MessageResponse;
 import br.edu.webchat.chat.dto.PresenceResponse;
 import br.edu.webchat.chat.dto.ReadReceiptResponse;
 import br.edu.webchat.chat.dto.SendMessageRequest;
-import br.edu.webchat.chat.repository.ChatRepository;
-import br.edu.webchat.chat.repository.MessageRepository;
 import br.edu.webchat.shared.exception.ApiError;
+import br.edu.webchat.support.StompIntegrationTest;
 import br.edu.webchat.user.dto.CreateUserRequest;
+import br.edu.webchat.user.dto.ProfileResponse;
+import br.edu.webchat.user.dto.UserResponse;
 import br.edu.webchat.user.entity.UserStatus;
-import br.edu.webchat.user.repository.UserRepository;
 import br.edu.webchat.user.service.UserService;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.messaging.converter.MappingJackson2MessageConverter;
-import org.springframework.messaging.simp.stomp.StompFrameHandler;
-import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
-import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
-import org.springframework.messaging.simp.user.SimpUserRegistry;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.socket.WebSocketHttpHeaders;
-import org.springframework.web.socket.client.standard.StandardWebSocketClient;
-import org.springframework.web.socket.messaging.WebSocketStompClient;
 
-import java.lang.reflect.Type;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Tempo real com servidor, WebSocket, STOMP, seguranca e banco reais. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("test")
-class RealtimeIntegrationTest {
+class RealtimeIntegrationTest extends StompIntegrationTest {
 
 	private static final String ALEXANDRE = "alexandre@email.com";
 	private static final String MARIA = "maria@email.com";
 	private static final String JOAO = "joao@email.com";
 
-	@LocalServerPort
-	private int port;
-
-	@Autowired
-	private ObjectMapper objectMapper;
-
-	@Autowired
-	private JwtService jwtService;
-
 	@Autowired
 	private UserService userService;
 
-	@Autowired
-	private UserRepository userRepository;
-
-	@Autowired
-	private ChatRepository chatRepository;
-
-	@Autowired
-	private MessageRepository messageRepository;
-
-	@Autowired
-	private SimpUserRegistry userRegistry;
-
-	private final RestTemplate rest = new RestTemplate(new JdkClientHttpRequestFactory());
-	private final List<StompSession> sessions = new ArrayList<>();
-
-	private WebSocketStompClient stompClient;
 	private Long alexandreId;
 	private Long mariaId;
 	private Long chatId;
@@ -104,18 +50,6 @@ class RealtimeIntegrationTest {
 		Map<?, ?> chat = rest.exchange(url("/api/v1/chats"), HttpMethod.POST,
 				json(ALEXANDRE, Map.of("participantId", mariaId)), Map.class).getBody();
 		chatId = ((Number) chat.get("id")).longValue();
-
-		MappingJackson2MessageConverter converter = new MappingJackson2MessageConverter();
-		converter.setObjectMapper(objectMapper);
-		stompClient = new WebSocketStompClient(new StandardWebSocketClient());
-		stompClient.setMessageConverter(converter);
-	}
-
-	@AfterEach
-	void tearDown() {
-		sessions.stream().filter(StompSession::isConnected).forEach(StompSession::disconnect);
-		aguardar(() -> userRegistry.getUserCount() == 0);
-		limparBase();
 	}
 
 	@Test
@@ -216,79 +150,27 @@ class RealtimeIntegrationTest {
 		assertThat(userRepository.findById(mariaId).orElseThrow().getStatus()).isEqualTo(UserStatus.OFFLINE);
 	}
 
-	private StompSession conectar(String email) throws Exception {
-		return connect("Bearer " + jwtService.generateToken(email));
+	@Test
+	void cadastroAvisaOsConectadosParaANovaPessoaAparecerNaLista() throws Exception {
+		BlockingQueue<UserResponse> novos = subscribe(conectar(ALEXANDRE), ALEXANDRE, "/topic/users", UserResponse.class);
+
+		rest.postForEntity(url("/api/v1/auth/register"),
+				new CreateUserRequest("Bia", "bia@email.com", "123456"), Map.class);
+
+		UserResponse bia = novos.poll(5, TimeUnit.SECONDS);
+		assertThat(bia).isNotNull();
+		assertThat(bia.name()).isEqualTo("Bia");
+		assertThat(bia.email()).isEqualTo("bia@email.com");
+		assertThat(bia.status()).isEqualTo(UserStatus.OFFLINE);
 	}
 
-	private StompSession connect(String authorization) throws Exception {
-		StompHeaders headers = new StompHeaders();
-		if (authorization != null) {
-			headers.add("Authorization", authorization);
-		}
+	@Test
+	void trocaDeNomeChegaATodosOsConectados() throws Exception {
+		BlockingQueue<ProfileResponse> perfis = subscribe(conectar(ALEXANDRE), ALEXANDRE, "/topic/profiles", ProfileResponse.class);
 
-		CompletableFuture<StompSession> future = stompClient.connectAsync("ws://localhost:" + port + "/ws",
-				new WebSocketHttpHeaders(), headers, new StompSessionHandlerAdapter() { });
-		StompSession session = future.get(3, TimeUnit.SECONDS);
-		sessions.add(session);
-		return session;
-	}
+		rest.exchange(url("/api/v1/users/me"), HttpMethod.PUT, json(MARIA, Map.of("name", "Maria Silva")), Map.class);
 
-	private <T> BlockingQueue<T> subscribe(StompSession session, String email, String destination, Class<T> type) {
-		BlockingQueue<T> queue = new LinkedBlockingQueue<>();
-		int esperadas = assinaturas(email, destination) + 1;
-		session.subscribe(destination, new StompFrameHandler() {
-			@Override
-			public Type getPayloadType(StompHeaders headers) {
-				return type;
-			}
-
-			@Override
-			public void handleFrame(StompHeaders headers, Object payload) {
-				queue.add(type.cast(payload));
-			}
-		});
-
-		aguardar(() -> assinaturas(email, destination) >= esperadas);
-		return queue;
-	}
-
-	private int assinaturas(String email, String destination) {
-		return userRegistry.findSubscriptions(subscription ->
-				subscription.getDestination().equals(destination)
-						&& subscription.getSession().getUser().getName().equals(email)).size();
-	}
-
-	private static void aguardar(BooleanSupplier condition) {
-		Instant limite = Instant.now().plus(Duration.ofSeconds(5));
-		while (!condition.getAsBoolean()) {
-			if (Instant.now().isAfter(limite)) {
-				throw new AssertionError("Condicao nao atingida em 5 segundos");
-			}
-			try {
-				Thread.sleep(20);
-			}
-			catch (InterruptedException ex) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(ex);
-			}
-		}
-	}
-
-	private HttpEntity<Object> json(String email, Object body) {
-		HttpHeaders headers = new HttpHeaders();
-		headers.setContentType(MediaType.APPLICATION_JSON);
-		headers.setBearerAuth(jwtService.generateToken(email));
-		return new HttpEntity<>(body, headers);
-	}
-
-	private String url(String path) {
-		return "http://localhost:" + port + path;
-	}
-
-	private void limparBase() {
-		messageRepository.deleteAll();
-		chatRepository.deleteAll();
-		userRepository.deleteAll();
+		assertThat(perfis.poll(5, TimeUnit.SECONDS)).isEqualTo(new ProfileResponse(mariaId, "Maria Silva", null));
 	}
 
 }

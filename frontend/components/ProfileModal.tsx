@@ -1,12 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState } from "react";
 import type { User } from "@/lib/types";
 import { usersApi } from "@/lib/api";
 import Modal from "./Modal";
-import Avatar from "./Avatar";
-import Cropper from "react-easy-crop";
-import getCroppedImg from "@/lib/cropImage";
+import AvatarPicker from "./AvatarPicker";
 
 interface Props {
   me: User;
@@ -19,33 +17,6 @@ export default function ProfileModal({ me, onClose, onUpdate }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Avatar Upload State
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
-
-  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      const imageDataUrl = await readFile(file);
-      setImageSrc(imageDataUrl);
-    }
-  };
-
-  const readFile = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.addEventListener('load', () => resolve(reader.result as string), false);
-      reader.readAsDataURL(file);
-    });
-  };
-
   async function handleSave() {
     if (!name.trim()) {
       setError("O nome não pode ficar vazio.");
@@ -54,22 +25,10 @@ export default function ProfileModal({ me, onClose, onUpdate }: Props) {
     setLoading(true);
     setError(null);
     try {
-      let updatedUser = me;
-      
-      // Update name if changed
+      // A foto é salva na hora, pelo AvatarPicker; aqui só o nome.
       if (name.trim() !== me.name) {
-        updatedUser = await usersApi.update(name.trim());
+        onUpdate(await usersApi.update(name.trim()));
       }
-      
-      // Upload cropped avatar if there's one
-      if (imageSrc && croppedAreaPixels) {
-        const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
-        if (croppedImage) {
-          updatedUser = await usersApi.uploadAvatar(croppedImage);
-        }
-      }
-
-      onUpdate(updatedUser);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao atualizar perfil");
@@ -92,61 +51,11 @@ export default function ProfileModal({ me, onClose, onUpdate }: Props) {
   return (
     <Modal title="Editar Perfil" onClose={onClose}>
       <div className="flex flex-col items-center gap-6 pb-2">
-        {imageSrc ? (
-          <div className="flex flex-col items-center w-full">
-            <div className="relative w-full h-64 bg-slate-900 rounded-lg overflow-hidden mb-4">
-              <Cropper
-                image={imageSrc}
-                crop={crop}
-                zoom={zoom}
-                aspect={1}
-                cropShape="round"
-                showGrid={false}
-                onCropChange={setCrop}
-                onCropComplete={onCropComplete}
-                onZoomChange={setZoom}
-              />
-            </div>
-            <div className="w-full flex items-center gap-4 px-2">
-              <span className="text-xs text-slate-400">Zoom</span>
-              <input
-                type="range"
-                value={zoom}
-                min={1}
-                max={3}
-                step={0.1}
-                aria-labelledby="Zoom"
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-            <button 
-              onClick={() => setImageSrc(null)}
-              className="mt-4 text-xs text-slate-400 hover:text-slate-200"
-            >
-              Cancelar imagem
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-             <button 
-               className="relative group rounded-full overflow-hidden"
-               onClick={() => fileInputRef.current?.click()}
-             >
-               <Avatar name={name} url={me.avatarUrl} size="lg" />
-               <div className="absolute inset-0 bg-black/50 hidden group-hover:flex items-center justify-center text-xs text-white">
-                 Alterar Foto
-               </div>
-             </button>
-             <input 
-               type="file" 
-               accept="image/*" 
-               className="hidden" 
-               ref={fileInputRef}
-               onChange={handleFileChange} 
-             />
-          </div>
-        )}
+        <AvatarPicker
+          name={name}
+          url={me.avatarUrl}
+          onSave={async (foto) => onUpdate(await usersApi.uploadAvatar(foto))}
+        />
 
         <div className="w-full">
           <label className="mb-2 block text-sm font-medium text-slate-300">
