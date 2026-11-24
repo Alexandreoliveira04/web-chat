@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { Client } from "@stomp/stompjs";
+import { callsApi } from "./api";
 import { publishCallAction, publishCallSignal } from "./realtime";
 import { playRingtone } from "./ringtone";
 import type { CallEndReason, CallEvent, CallSignal } from "./types";
@@ -32,9 +33,10 @@ interface Options {
 
 const IDLE: CallState = { status: "idle", chatId: null, peerId: null, muted: false, startedAt: null };
 
-// STUN descobre o endereço público de cada navegador. Na mesma rede ele nem é necessário;
-// entre redes restritivas seria preciso também um servidor TURN.
-const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+// Os servidores STUN/TURN vêm do backend (GET /calls/ice-servers), porque o TURN tem
+// credenciais. O STUN só descobre o endereço público; quando a conexão direta é bloqueada
+// (4G, firewall), o áudio passa pelo TURN. Este STUN fica só de reserva, se a busca falhar.
+const STUN_RESERVA: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 const TEMPO_TOCANDO_MS = 30_000;
 
@@ -58,6 +60,7 @@ export function useVoiceCall({ clientRef, meId, nameOf, onNotice }: Options) {
   const stopRingtoneRef = useRef<(() => void) | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const acceptedHereRef = useRef(false);
+  const iceServersRef = useRef<RTCIceServer[] | null>(null);
 
   const update = useCallback((next: CallState) => {
     stateRef.current = next;
@@ -107,9 +110,19 @@ export function useVoiceCall({ clientRef, meId, nameOf, onNotice }: Options) {
     }
   }, []);
 
+  /** Busca uma vez por sessão; se falhar, liga só com o STUN de reserva e tenta de novo na próxima. */
+  const carregarIceServers = useCallback(async () => {
+    if (iceServersRef.current) return;
+    try {
+      iceServersRef.current = await callsApi.iceServers();
+    } catch {
+      console.warn("Sem a lista de servidores TURN; a chamada pode não conectar entre redes diferentes");
+    }
+  }, []);
+
   const createPeer = useCallback(
     (chatId: number) => {
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      const pc = new RTCPeerConnection({ iceServers: iceServersRef.current ?? STUN_RESERVA });
       pcRef.current = pc;
 
       localStreamRef.current?.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current!));
@@ -165,6 +178,7 @@ export function useVoiceCall({ clientRef, meId, nameOf, onNotice }: Options) {
         cleanup();
         return;
       }
+      await carregarIceServers();
 
       if (!publishCallAction(clientRef.current, chatId, "start")) {
         notice("Sem conexão em tempo real");
@@ -181,7 +195,7 @@ export function useVoiceCall({ clientRef, meId, nameOf, onNotice }: Options) {
         }
       }, TEMPO_TOCANDO_MS);
     },
-    [cleanup, clientRef, getMicrophone, notice, update],
+    [carregarIceServers, cleanup, clientRef, getMicrophone, notice, update],
   );
 
   const accept = useCallback(async () => {
@@ -198,12 +212,13 @@ export function useVoiceCall({ clientRef, meId, nameOf, onNotice }: Options) {
       cleanup();
       return;
     }
+    await carregarIceServers();
 
     acceptedHereRef.current = true;
     createPeer(chatId);
     update({ ...stateRef.current, status: "connecting" });
     publishCallAction(clientRef.current, chatId, "accept");
-  }, [cleanup, clientRef, createPeer, getMicrophone, notice, stopRingtone, update]);
+  }, [carregarIceServers, cleanup, clientRef, createPeer, getMicrophone, notice, stopRingtone, update]);
 
   const hangUp = useCallback(() => {
     const chatId = stateRef.current.chatId;

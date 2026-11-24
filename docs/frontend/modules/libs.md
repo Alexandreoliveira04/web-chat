@@ -41,6 +41,7 @@ Os grupos de chamadas espelham os módulos do backend:
 | `usersApi` | `me`, `list`, `update`, `uploadAvatar` |
 | `chatsApi` | `list` (com busca opcional), `byId`, `openDirect`, `createGroup`, `rename`, `uploadAvatar`, `addParticipant`, `removeParticipant`, `leave` |
 | `messagesApi` | `history`, `shared` (arquivos e links da conversa), `send`, `edit`, `remove`, `markAsRead` |
+| `callsApi` | `iceServers` (servidores STUN/TURN das chamadas) |
 | `filesApi` | `upload` (envia para o Cloud Storage e devolve a URL) |
 
 `getAssetUrl` completa um caminho relativo com a base do backend; URLs absolutas, como as do
@@ -88,7 +89,8 @@ liga aos handlers do STOMP, e `reset`, chamado quando a conexão volta de uma qu
 
 - **Microfone**: `getUserMedia` com cancelamento de eco, supressão de ruído e ganho
   automático. Sem permissão ou fora de contexto seguro, avisa e não liga.
-- **WebRTC**: um `RTCPeerConnection` com o STUN público do Google. Quem ligou cria a oferta
+- **WebRTC**: um `RTCPeerConnection` com os servidores STUN/TURN que vêm do backend
+  (`callsApi.iceServers`, buscados uma vez por sessão; se falhar, um STUN público de reserva). Quem ligou cria a oferta
   depois do `ACCEPTED`; quem atendeu responde. Candidatos ICE que chegam antes da descrição
   remota esperam numa fila.
 - **Áudio remoto**: tocado num `Audio` criado pelo hook, fora da árvore do React.

@@ -3,12 +3,15 @@
 #   Cloud Run (desliga quando ninguem usa) + Cloud Storage + banco PostgreSQL no Neon (gratis).
 #
 # Uso:
-#   PROJECT_ID=meu-projeto DATABASE_URL_FILE=~/neon-url.txt ./deploy/gcp.sh
+#   PROJECT_ID=meu-projeto DATABASE_URL_FILE=~/neon-url.txt ICE_SERVERS_FILE=~/turn.txt ./deploy/gcp.sh
 #
 # DATABASE_URL_FILE aponta para um arquivo com a connection string do Neon
 # (postgresql://usuario:senha@host/banco?sslmode=require). Tambem da para passar a string
-# direto em DATABASE_URL. Pode ser rodado de novo: so publica uma nova versao do codigo.
-# Detalhes em docs/deploy.md.
+# direto em DATABASE_URL.
+# ICE_SERVERS_FILE (opcional) aponta para a lista JSON de servidores STUN/TURN das chamadas
+# de voz, como a que o painel da Metered mostra. Sem ela, vale a ultima lista ja enviada; se
+# nunca houve uma, as chamadas usam so STUN e podem nao conectar entre redes diferentes.
+# Pode ser rodado de novo: so publica uma nova versao do codigo. Detalhes em docs/deploy.md.
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:?Defina PROJECT_ID, ex.: PROJECT_ID=meu-projeto ./deploy/gcp.sh}"
@@ -122,18 +125,39 @@ else
 		--notifications-rule-pubsub-topic="$TOPIC_PATH" --quiet >/dev/null
 fi
 
-step "Segredos: chave do JWT (gerada uma vez) e senha do banco"
+step "Segredos: chave do JWT (gerada uma vez), senha do banco e servidores TURN"
 if ! gcloud secrets describe webchat-jwt-secret >/dev/null 2>&1; then
 	openssl rand -base64 48 | tr -d '\n' | gcloud secrets create webchat-jwt-secret --data-file=- \
 		--replication-policy=automatic --quiet
 fi
-if ! gcloud secrets describe webchat-db-password >/dev/null 2>&1; then
-	printf '%s' "$DB_PASSWORD" | gcloud secrets create webchat-db-password --data-file=- \
-		--replication-policy=automatic --quiet
-elif [[ "$(gcloud secrets versions access latest --secret=webchat-db-password)" != "$DB_PASSWORD" ]]; then
-	printf '%s' "$DB_PASSWORD" | gcloud secrets versions add webchat-db-password --data-file=- --quiet
-fi
+# Cria o segredo ou adiciona uma versao nova so quando o valor mudou.
+upsert_secret() {
+	local name="$1" value="$2"
+	if ! gcloud secrets describe "$name" >/dev/null 2>&1; then
+		printf '%s' "$value" | gcloud secrets create "$name" --data-file=- --replication-policy=automatic --quiet
+	elif [[ "$(gcloud secrets versions access latest --secret="$name")" != "$value" ]]; then
+		printf '%s' "$value" | gcloud secrets versions add "$name" --data-file=- --quiet
+	fi
+}
+upsert_secret webchat-db-password "$DB_PASSWORD"
 unset DB_PASSWORD DATABASE_URL
+
+# Servidores STUN/TURN das chamadas (credenciais do TURN: o repositorio e publico).
+if [[ -n "${ICE_SERVERS_FILE:-}" ]]; then
+	ICE_SERVERS_JSON="$(python3 -I -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+assert isinstance(d,list) and d and all("urls" in s for s in d), "precisa ser uma lista de servidores com urls"
+print(json.dumps(d,separators=(",",":")))' "${ICE_SERVERS_FILE/#\~/$HOME}")" \
+		|| { echo "ICE_SERVERS_FILE invalido: esperado a lista JSON iceServers" >&2; exit 1; }
+	upsert_secret webchat-ice-servers "$ICE_SERVERS_JSON"
+	unset ICE_SERVERS_JSON
+fi
+APP_SECRETS="JWT_SECRET=webchat-jwt-secret:latest,DB_PASSWORD=webchat-db-password:latest"
+RUN_SECRETS=(webchat-jwt-secret webchat-db-password)
+if gcloud secrets describe webchat-ice-servers >/dev/null 2>&1; then
+	APP_SECRETS="${APP_SECRETS},ICE_SERVERS=webchat-ice-servers:latest"
+	RUN_SECRETS+=(webchat-ice-servers)
+fi
 
 step "Arquivos: bucket $BUCKET no Cloud Storage, com leitura publica"
 if ! gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1; then
@@ -149,7 +173,7 @@ if ! gcloud iam service-accounts describe "$RUN_SA" >/dev/null 2>&1; then
 fi
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$RUN_SA" \
 	--role=roles/storage.objectAdmin --quiet >/dev/null
-for secret in webchat-jwt-secret webchat-db-password; do
+for secret in "${RUN_SECRETS[@]}"; do
 	gcloud secrets add-iam-policy-binding "$secret" --member="serviceAccount:$RUN_SA" \
 		--role=roles/secretmanager.secretAccessor --quiet >/dev/null
 done
@@ -165,7 +189,7 @@ gcloud run deploy "$SERVICE" --source . --region="$REGION" --quiet \
 	--min-instances=0 --max-instances=1 \
 	--session-affinity --timeout=3600 \
 	--set-env-vars="^@^SPRING_DATASOURCE_URL=${JDBC_URL}@DB_USER=${DB_USER}@GCS_HOST=https://storage.googleapis.com@GCS_PUBLICURL=https://storage.googleapis.com@GCS_BUCKET=${BUCKET}@GCS_PROJECTID=${PROJECT_ID}@GCS_INITBUCKET=false@WS_ALLOWED_ORIGINS=${APP_URL}@CORS_ALLOWED_ORIGINS=${APP_URL}" \
-	--set-secrets="JWT_SECRET=webchat-jwt-secret:latest,DB_PASSWORD=webchat-db-password:latest"
+	--set-secrets="$APP_SECRETS"
 
 step "Limpeza das imagens antigas (o Artifact Registry so e gratis ate 0,5 GB)"
 POLICY_FILE="$(mktemp)"

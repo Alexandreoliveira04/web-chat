@@ -39,12 +39,25 @@ publica a aplicação.
    Pode ser a string com ou sem pool de conexões: o script troca pelo endereço direto, que
    é o que o Flyway precisa.
 
+4. Conta grátis na **Metered** (metered.ca), no plano *Free Trial · Global* (500 MB, sem
+   cobrança extra), para o **servidor TURN** das chamadas de voz. Em *TURN Server → Add
+   Credential → Show ICE Servers Array*, copie a lista `iceServers` e salve como JSON num
+   arquivo fora do repositório:
+
+   ```bash
+   nano ~/turn.txt && chmod 600 ~/turn.txt
+   ```
+
+   Sem TURN, o áudio só conecta quando os dois aparelhos conseguem se falar direto, o que
+   costuma falhar entre redes diferentes (4G, firewalls): a chamada fica em "Conectando…" e
+   encerra. Qualquer outro provedor de TURN serve; muda só o arquivo.
+
 ## Publicar
 
 Na raiz do projeto:
 
 ```bash
-PROJECT_ID=meu-projeto DATABASE_URL_FILE=~/neon-url.txt ./deploy/gcp.sh
+PROJECT_ID=meu-projeto DATABASE_URL_FILE=~/neon-url.txt ICE_SERVERS_FILE=~/turn.txt ./deploy/gcp.sh
 ```
 
 A primeira execução leva uns 10 minutos, quase tudo no build das imagens. No fim aparece a
@@ -110,11 +123,12 @@ Também ajudam a ficar no gratuito:
    orçamentos, faturamento, Pub/Sub, Cloud Functions e Eventarc.
 2. **A trava de custo**: tópico `webchat-orcamento`, função `webchat-billing-guard` e o
    orçamento `webchat-custo-zero`.
-3. **Segredos** no Secret Manager: `webchat-jwt-secret` (gerado uma vez) e
-   `webchat-db-password` (a senha do Neon). Nada disso fica no código.
+3. **Segredos** no Secret Manager: `webchat-jwt-secret` (gerado uma vez),
+   `webchat-db-password` (a senha do Neon) e `webchat-ice-servers` (a lista do TURN). Nada
+   disso fica no código.
 4. **O bucket** `<projeto>-webchat-files`, com leitura pública dos objetos: as URLs dos
    arquivos vão direto para o navegador, sem token.
-5. **A conta de serviço** `webchat-run`, só com acesso ao bucket e aos dois segredos.
+5. **A conta de serviço** `webchat-run`, só com acesso ao bucket e aos segredos.
 6. **O build e o serviço** `webchat` no Cloud Run.
 
 ## Configuração no Cloud Run
@@ -139,6 +153,7 @@ Variáveis de ambiente:
 | `GCS_BUCKET`, `GCS_PROJECTID` | o bucket e o projeto |
 | `GCS_INITBUCKET` | `false` (o bucket já foi criado pelo script) |
 | `WS_ALLOWED_ORIGINS`, `CORS_ALLOWED_ORIGINS` | a URL do Cloud Run |
+| `ICE_SERVERS` | segredo `webchat-ice-servers`: a lista STUN/TURN das chamadas, entregue ao navegador por `GET /api/v1/calls/ice-servers` |
 
 **Storage sem arquivo de chave.** No Cloud Run, o SDK do Cloud Storage usa a conta de serviço
 automaticamente; o `GcsConfig` só troca o endereço do emulador pelo do Google (`GCS_HOST`).
@@ -170,8 +185,8 @@ Algumas horas ou um dia ligado ficam no nível gratuito ou custam centavos.
   5 segundos, mas uma chamada de voz mais longa que isso cai.
 - **Uma instância só**: para escalar seria preciso um broker externo (ver
   [arquitetura](backend/architecture.md#limitações-conhecidas)).
-- **Sem servidor TURN**: em redes muito restritivas, o áudio das chamadas pode não conectar
-  (ver [call](backend/modules/call.md#limitações-conhecidas)).
+- **TURN no plano grátis da Metered**: 500 MB de áudio repassado (umas 5 a 10 horas de
+  chamada pelo TURN). Ao acabar, as chamadas entre redes restritivas voltam a não conectar.
 
 ## Apagar tudo
 

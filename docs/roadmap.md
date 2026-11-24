@@ -25,8 +25,9 @@ A branch `feat/chamada-de-voz` já está no GitHub, com pull request aberto para
   usar uma gravação, coloque os arquivos em `frontend/public/sounds/` e troque as chamadas de
   `playRingtone` em `useVoiceCall.ts` por uma função que toque o arquivo em loop. Ver
   [lib](frontend/modules/libs.md#ringtonets).
-- [ ] **Servidor TURN.** Um container `coturn` no `compose.yaml`, para o áudio conectar
-  também atrás de redes restritivas.
+- [x] **Servidor TURN** (Metered, plano grátis), para o áudio conectar também atrás de redes
+  restritivas. Se a cota de 500 MB não bastar, trocar de provedor (por exemplo o TURN da
+  Cloudflare) muda só o arquivo de `ICE_SERVERS`.
 - [ ] **Chamada em grupo.** Primeiro com uma conexão por par de participantes (funciona bem
   até umas 4–5 pessoas), com sala de voz por conversa, como no Discord: entra e sai quando
   quiser, e todos veem quem está na sala. Para grupos grandes, trocar por um servidor de
