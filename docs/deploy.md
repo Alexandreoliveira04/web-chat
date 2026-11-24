@@ -54,6 +54,50 @@ versão, rode o mesmo comando.
 Variáveis opcionais: `REGION` (padrão `us-central1`), `SERVICE`, `BUCKET`, `BUDGET_AMOUNT`
 (padrão `6`, na moeda da conta de faturamento).
 
+O `deploy/gcp.sh` monta tudo e serve para mudar a configuração (segredos, TURN, trava de
+custo). Para só publicar código novo, o caminho normal é o deploy automático abaixo.
+
+## Deploy automático pela `main`
+
+Cada push na `main`, ou seja, cada merge de pull request nela, roda o workflow
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) no GitHub Actions:
+
+```text
+push na main ──► testes do backend + build do frontend ──► gcloud run deploy --source .
+                       │ falhou?                                  │
+                       ▼                                          ▼
+                 nada é publicado                      confere /api/v1/health
+```
+
+- **Só a imagem muda.** Variáveis de ambiente, segredos, trava de custo e limites continuam
+  como o `deploy/gcp.sh` deixou.
+- **Um deploy por vez**: um merge novo espera o anterior terminar.
+- **Também dá para rodar à mão** em *Actions → Deploy → Run workflow*, mas só a partir da
+  `main`.
+- **Sem chave do Google no GitHub.** O login usa Workload Identity Federation: o Google
+  aceita os tokens que o GitHub Actions emite, **só deste repositório e só da branch
+  `main`**, e os troca por uma credencial temporária da conta de serviço
+  `webchat-deployer`. Os identificadores no workflow não são segredos.
+- **A conta `webchat-deployer` só publica**: papel *Cloud Run Source Developer* no projeto e
+  permissão de agir como as contas do app (`webchat-run`) e do build. Não lê segredos nem
+  mexe em faturamento.
+- **Custo**: o GitHub Actions é grátis em repositório público, e cada publicação usa alguns
+  minutos de build e espaço de imagem, dentro do nível gratuito (a limpeza automática mantém
+  só as imagens mais recentes).
+
+**Configuração (uma vez).** Na raiz do projeto, com o `gcloud` logado:
+
+```bash
+PROJECT_ID=meu-projeto ./deploy/github-actions.sh
+```
+
+O script cria a conta `webchat-deployer`, o pool `github` e o provedor `web-chat`, e mostra
+os dois valores que o workflow usa (`WORKLOAD_IDENTITY_PROVIDER` e
+`DEPLOYER_SERVICE_ACCOUNT`). Para outro repositório ou branch: `REPOSITORY` e `BRANCH`.
+
+**Cuidado com a `main`**: tudo o que entra nela vai para produção, incluindo migrations
+novas, que rodam no banco do Neon na subida. Antes de mergear na `main`, teste na `develop`.
+
 ## Trava de custo
 
 O uso normal fica no nível gratuito. Para o caso de algo sair do previsto, há duas camadas,
